@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:GoldenImage}",
+            "name": "Debug golden-image-compare",
+            "target": "golden-image-compare",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug golden-image-compare"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:GoldenImage}",
+            "name": "Release golden-image-compare",
+            "target": "golden-image-compare",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release golden-image-compare"
+        }
+    ]
+}
