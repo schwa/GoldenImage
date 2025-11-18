@@ -20,7 +20,7 @@ func testGradientViaCGImage() throws {
     let cgImage1 = try loadCGImageFixture(fixture)
     let cgImage2 = try loadCGImageFixture(fixture)
 
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let texture1 = try makeTexture(from: cgImage1, device: device)
     let texture2 = try makeTexture(from: cgImage2, device: device)
 
@@ -42,7 +42,7 @@ func testPatternViaCGImage() throws {
     let cgImage1 = try loadCGImageFixture(fixture)
     let cgImage2 = try loadCGImageFixture(fixture)
 
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let texture1 = try makeTexture(from: cgImage1, device: device)
     let texture2 = try makeTexture(from: cgImage2, device: device)
 
@@ -64,7 +64,7 @@ func testAlphaViaCGImage() throws {
     let cgImage1 = try loadCGImageFixture(fixture)
     let cgImage2 = try loadCGImageFixture(fixture)
 
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let texture1 = try makeTexture(from: cgImage1, device: device)
     let texture2 = try makeTexture(from: cgImage2, device: device)
 
@@ -86,7 +86,7 @@ func testLargeViaCGImage() throws {
     let cgImage1 = try loadCGImageFixture(fixture)
     let cgImage2 = try loadCGImageFixture(fixture)
 
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let texture1 = try makeTexture(from: cgImage1, device: device)
     let texture2 = try makeTexture(from: cgImage2, device: device)
 

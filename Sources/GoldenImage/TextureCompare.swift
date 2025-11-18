@@ -16,10 +16,12 @@ public enum TextureComparisonError: Error {
     case failedToCreateCommandBuffer
     /// Textures must have identical dimensions to compare.
     case dimensionMismatch
+    /// Metal is not supported on this device.
+    case metalNotSupported
 }
 
-final class TextureComparer: Sendable {
-    static let shared = TextureComparer()
+final class TextureCompare: Sendable {
+    static let shared = TextureCompare()
 
     let device: MTLDevice
     let commandQueue: MTLCommandQueue

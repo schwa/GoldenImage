@@ -1,54 +1,36 @@
 # GoldenImage
 
-GPU-accelerated image comparison for Swift tests using Metal compute shaders.
-
-## Features
-
-- Fast PSNR (Peak Signal-to-Noise Ratio) calculation using Metal
-- Compare images loaded as CGImage, CIImage, or MTLTexture
-- Automatic color space normalization to sRGB
-- macOS 13+
-
-## Installation
-
-Add to your `Package.swift`:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/yourusername/GoldenImage.git", from: "1.0.0")
-]
-```
+GPU-accelerated image comparison using PSNR (Peak Signal-to-Noise Ratio).
 
 ## Usage
 
 ```swift
 import GoldenImage
-import Metal
 
-let device = MTLCreateSystemDefaultDevice()!
-let texture1 = try makeTexture(from: cgImage1, device: device)
-let texture2 = try makeTexture(from: cgImage2, device: device)
-
-let psnr = try calculatePSNR(lhs: texture1, rhs: texture2)
-
-if psnr.isInfinite {
-    print("Images are identical")
-} else if psnr >= 40 {
-    print("Excellent quality (nearly identical)")
-} else if psnr >= 30 {
-    print("Good quality")
-} else {
-    print("Images differ significantly")
-}
+let psnr = try calculatePSNR(lhs: image1, rhs: image2, lhsPath: "img1.png", rhsPath: "img2.png")
+// Returns: ∞ dB (identical) or numeric value
 ```
 
-## CLI Tool
-
-Compare images from the command line:
+## CLI
 
 ```bash
-swift run golden-image-compare image1.png image2.png
+golden-image-compare image1.png image2.png
 ```
+
+## Environment Variables
+
+Auto-save comparisons by setting:
+
+- `GOLDEN_IMAGE_OUTPUT=1` - Save to temp directory
+- `GOLDEN_IMAGE_OUTPUT_PATH=/path` - Custom output directory
+- `GOLDEN_IMAGE_OUTPUT_REVEAL=1` - Open in Finder (macOS)
+- `GOLDEN_IMAGE_LOGGING=1` - Enable logging
+
+### Output
+
+Creates timestamped subdirectory with:
+- Both images as PNG
+- `comparison.txt` with PSNR and metadata
 
 ## PSNR Interpretation
 

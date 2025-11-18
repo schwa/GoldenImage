@@ -67,7 +67,7 @@ func verifyAllFixtures() throws {
 
     for fixture in fixtures {
         let ciImage = try loadFixture(fixture)
-        let comparer = TextureComparer.shared
+        let comparer = TextureCompare.shared
         let texture1 = try makeTexture(from: ciImage, device: comparer.device)
         let texture2 = try makeTexture(from: ciImage, device: comparer.device)
 
@@ -126,7 +126,7 @@ func randomizedVerification(seed: Int) throws {
         pixels2[i] = pixels1[i]
     }
 
-    let comparer = TextureComparer.shared
+    let comparer = TextureCompare.shared
     let descriptor = MTLTextureDescriptor.texture2DDescriptor(
         pixelFormat: .rgba8Unorm,
         width: width,

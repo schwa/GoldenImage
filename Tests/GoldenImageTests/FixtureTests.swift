@@ -28,7 +28,7 @@ func testThreadgroupSizes() throws {
 @Test("Benchmark large images - 8192x8192 comparison", .timeLimit(.minutes(1)))
 func testBenchmarkLargeImages() throws {
     let ultra = try loadFixture("ultra_8192x8192")
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let texture = try makeTexture(from: ultra, device: device)
 
     let gpuStart = Date()

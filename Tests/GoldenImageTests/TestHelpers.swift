@@ -21,12 +21,12 @@ func createGradientCIImage(width: Int, height: Int) -> CIImage {
 
 func createSolidColorTexture(width: Int, height: Int, color: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)) throws -> MTLTexture {
     let ciImage = createSolidColorCIImage(width: width, height: height, color: color)
-    return try makeTexture(from: ciImage, device: TextureComparer.shared.device)
+    return try makeTexture(from: ciImage, device: TextureCompare.shared.device)
 }
 
 func createGradientTexture(width: Int, height: Int) throws -> MTLTexture {
     let ciImage = createGradientCIImage(width: width, height: height)
-    return try makeTexture(from: ciImage, device: TextureComparer.shared.device)
+    return try makeTexture(from: ciImage, device: TextureCompare.shared.device)
 }
 
 func createSolidColorCGImage(width: Int, height: Int, color: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)) throws -> CGImage {
@@ -102,7 +102,7 @@ func cpuCompare(_ texture1: MTLTexture, _ texture2: MTLTexture) -> Bool {
 }
 
 func imagesAreIdentical(_ lhs: CGImage, _ rhs: CGImage) throws -> Bool {
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let textureA = try makeTexture(from: lhs, device: device)
     let textureB = try makeTexture(from: rhs, device: device)
     let psnr = try calculatePSNR(lhs: textureA, rhs: textureB)
@@ -110,7 +110,7 @@ func imagesAreIdentical(_ lhs: CGImage, _ rhs: CGImage) throws -> Bool {
 }
 
 func imagesAreIdentical(_ lhs: CIImage, _ rhs: CIImage) throws -> Bool {
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let textureA = try makeTexture(from: lhs, device: device)
     let textureB = try makeTexture(from: rhs, device: device)
     let psnr = try calculatePSNR(lhs: textureA, rhs: textureB)
@@ -123,7 +123,7 @@ func imagesAreIdentical(_ lhs: MTLTexture, _ rhs: MTLTexture) throws -> Bool {
 }
 
 func imagesAreDifferent(_ lhs: CGImage, _ rhs: CGImage) throws -> Bool {
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let textureA = try makeTexture(from: lhs, device: device)
     let textureB = try makeTexture(from: rhs, device: device)
     let psnr = try calculatePSNR(lhs: textureA, rhs: textureB)
@@ -131,7 +131,7 @@ func imagesAreDifferent(_ lhs: CGImage, _ rhs: CGImage) throws -> Bool {
 }
 
 func imagesAreDifferent(_ lhs: CIImage, _ rhs: CIImage) throws -> Bool {
-    let device = TextureComparer.shared.device
+    let device = TextureCompare.shared.device
     let textureA = try makeTexture(from: lhs, device: device)
     let textureB = try makeTexture(from: rhs, device: device)
     let psnr = try calculatePSNR(lhs: textureA, rhs: textureB)
