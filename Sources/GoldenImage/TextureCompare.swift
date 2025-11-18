@@ -5,7 +5,7 @@ import Metal
 import MetalKit
 
 /// Errors that can occur during texture comparison operations.
-public enum TextureComparisonError: Error {
+enum TextureComparisonError: Error {
     case noMetalDevice
     case failedToCreateCommandQueue
     case failedToLoadLibrary
@@ -18,6 +18,8 @@ public enum TextureComparisonError: Error {
     case dimensionMismatch
     /// Metal is not supported on this device.
     case metalNotSupported
+    /// Images have different color spaces and cannot be compared.
+    case colorSpaceMismatch(lhs: CGColorSpace, rhs: CGColorSpace)
 }
 
 final class TextureCompare: Sendable {
@@ -26,6 +28,57 @@ final class TextureCompare: Sendable {
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
     let psnrPipelineState: MTLComputePipelineState
+
+    /// Calculate PSNR on CPU (for validation/comparison)
+    /// - Parameters:
+    ///   - textureA: First texture to compare
+    ///   - textureB: Second texture to compare
+    func calculatePSNRCPU(_ textureA: MTLTexture, _ textureB: MTLTexture) -> Double {
+        let width = textureA.width
+        let height = textureA.height
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+
+        var pixelsA = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+        var pixelsB = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+
+        textureA.getBytes(&pixelsA, bytesPerRow: bytesPerRow, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        textureB.getBytes(&pixelsB, bytesPerRow: bytesPerRow, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+
+        var sumSquaredDiff: Double = 0.0
+
+        for i in 0..<(width * height) {
+            let pixelIndex = i * bytesPerPixel
+
+            let rA = Double(pixelsA[pixelIndex])
+            let gA = Double(pixelsA[pixelIndex + 1])
+            let bA = Double(pixelsA[pixelIndex + 2])
+            let aA = Double(pixelsA[pixelIndex + 3])
+
+            let rB = Double(pixelsB[pixelIndex])
+            let gB = Double(pixelsB[pixelIndex + 1])
+            let bB = Double(pixelsB[pixelIndex + 2])
+            let aB = Double(pixelsB[pixelIndex + 3])
+
+            let diffR = rA - rB
+            let diffG = gA - gB
+            let diffB = bA - bB
+            let diffA = aA - aB
+
+            sumSquaredDiff += diffR * diffR + diffG * diffG + diffB * diffB + diffA * diffA
+        }
+
+        let mse = sumSquaredDiff / Double(width * height * 4)
+
+        if mse == 0.0 {
+            return 120.0
+        }
+
+        let rmse = sqrt(mse)
+        let psnr = 20.0 * log10(255.0 / rmse)
+
+        return min(psnr, 120.0)
+    }
 
     private init() {
         guard let device = MTLCreateSystemDefaultDevice() else {
@@ -111,14 +164,17 @@ final class TextureCompare: Sendable {
             sumSquaredDiff += Double(squaredDiffPointer[i])
         }
 
-        let mse = sumSquaredDiff / Double(width * height * 3)
+        let mse = sumSquaredDiff / Double(width * height * 4)
 
         if mse == 0.0 {
-            return Double.infinity
+            // Return 120 dB for identical images (matches ImageMagick's behavior)
+            return 120.0
         }
 
         let rmse = sqrt(mse)
+        let psnr = 20.0 * log10(255.0 / rmse)
 
-        return 20.0 * log10(255.0 / rmse)
+        // Cap PSNR at 120 dB to match ImageMagick's behavior
+        return min(psnr, 120.0)
     }
 }

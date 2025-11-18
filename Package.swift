@@ -38,7 +38,7 @@ let package = Package(
             name: "GoldenImageTests",
             dependencies: ["GoldenImage"],
             resources: [
-                .copy("Fixtures")
+                .process("Resources")
             ]
         ),
     ]

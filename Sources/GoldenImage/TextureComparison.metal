@@ -19,9 +19,9 @@ kernel void calculateSquaredDifferences(
         pixelA *= 255.0;
         pixelB *= 255.0;
 
-        // Calculate squared difference for each channel (RGB, ignore alpha)
+        // Calculate squared difference for each channel (RGBA)
         float4 diff = pixelA - pixelB;
-        float squared_diff = diff.r * diff.r + diff.g * diff.g + diff.b * diff.b;
+        float squared_diff = diff.r * diff.r + diff.g * diff.g + diff.b * diff.b + diff.a * diff.a;
 
         // Write to output buffer
         uint index = gid.y * textureA.get_width() + gid.x;

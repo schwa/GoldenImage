@@ -26,12 +26,12 @@ struct GoldenImageCLI: ParsableCommand {
             throw ValidationError("Failed to load image at: \(image2)")
         }
 
-        let psnr = try calculatePSNR(lhs: cgImage1, rhs: cgImage2, lhsPath: image1, rhsPath: image2)
+        let result = try ImageComparison().compare(cgImage1, cgImage2)
 
-        if psnr.isInfinite {
-            print("PSNR: ∞ dB (images are identical)")
+        if result.psnr >= 120.0 {
+            print("PSNR: 120.00 dB (images are identical or nearly identical)")
         } else {
-            print(String(format: "PSNR: %.2f dB", psnr))
+            print("PSNR: \(result.psnr)")
         }
     }
 

@@ -1,0 +1,563 @@
+import Testing
+import Foundation
+import CoreGraphics
+import ImageIO
+import Metal
+import SwiftUI
+@testable import GoldenImage
+
+@Suite("Golden Image Comparison Tests")
+struct GoldenImageTests {
+
+    // MARK: - Helper Methods
+
+    /// Load a CGImage from an EXR file
+    private func loadImage(named name: String) throws -> CGImage {
+        let url = TestImageGenerator.imageURL(named: name)
+
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            throw TestError.failedToLoadImage(url.path)
+        }
+
+        return cgImage
+    }
+
+    /// Compare two images using CPU method and return PSNR
+    private func compareCPU(imageA: CGImage, imageB: CGImage, nameA: String, nameB: String) throws -> Double {
+        try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "\(nameA).exr", rhsPath: "\(nameB).exr")
+    }
+
+    /// Compare two images using GPU method and return PSNR
+    private func compareGPU(imageA: CGImage, imageB: CGImage) throws -> Double {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        return try calculatePSNR(lhs: textureA, rhs: textureB)
+    }
+
+    // MARK: - Tests
+
+    @Test("Identical images should have PSNR of 120 dB (CPU and GPU)")
+    func testIdenticalImages() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "identical_a") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "identical_b") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "identical_a")
+        let imageB = try loadImage(named: "identical_b")
+
+        let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "identical_a", nameB: "identical_b")
+        let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
+
+        #expect(cpuPSNR >= 120.0)
+        #expect(gpuPSNR >= 120.0)
+    }
+
+    @Test("Different images should have low PSNR (CPU and GPU)")
+    func testDifferentImages() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "different_a") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "different_b") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.red))
+                    let circlePath = Path(ellipseIn: CGRect(x: rect.midX - 50, y: rect.midY - 50, width: 100, height: 100))
+                    context.fill(circlePath, with: .color(.yellow))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "different_a")
+        let imageB = try loadImage(named: "different_b")
+
+        let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "different_a", nameB: "different_b")
+        let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
+
+        #expect(cpuPSNR < 30.0)
+        #expect(gpuPSNR < 30.0)
+    }
+
+    @Test("Almost identical images should have high but not perfect PSNR (CPU and GPU)")
+    func testAlmostIdenticalImages() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "almost_a") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "almost_b") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                    let dotPath = Path(ellipseIn: CGRect(x: 10, y: 10, width: 2, height: 2))
+                    context.fill(dotPath, with: .color(.white.opacity(0.1)))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "almost_a")
+        let imageB = try loadImage(named: "almost_b")
+
+        let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "almost_a", nameB: "almost_b")
+        let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
+
+        #expect((30.0..<120.0).contains(cpuPSNR))
+        #expect((30.0..<120.0).contains(gpuPSNR))
+    }
+
+    // MARK: - Alpha/Transparency Tests
+
+    @Test("Identical images with alpha transparency (CPU and GPU)")
+    func testIdenticalWithAlpha() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "alpha_identical_a") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue.opacity(0.5)))
+                }
+            }
+            try TestImageGenerator.generate(name: "alpha_identical_b") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue.opacity(0.5)))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "alpha_identical_a")
+        let imageB = try loadImage(named: "alpha_identical_b")
+
+        let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "alpha_identical_a", nameB: "alpha_identical_b")
+        let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
+
+        #expect(cpuPSNR >= 120.0)
+        #expect(gpuPSNR >= 120.0)
+    }
+
+    @Test("Different alpha values (CPU and GPU)")
+    func testDifferentAlpha() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "alpha_different_a") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue.opacity(1.0)))
+                }
+            }
+            try TestImageGenerator.generate(name: "alpha_different_b") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue.opacity(0.2)))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "alpha_different_a")
+        let imageB = try loadImage(named: "alpha_different_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "alpha_different_a.exr", rhsPath: "alpha_different_b.exr")
+        #expect(cpuPSNR < 60.0, "CPU: Different alpha should have PSNR < 60 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR < 60.0, "GPU: Different alpha should have PSNR < 60 dB, got \(gpuPSNR)")
+    }
+
+    @Test("Alpha gradient comparison (CPU and GPU)")
+    func testAlphaGradient() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "alpha_gradient_a") {
+                Canvas { context, size in
+                    let gradient = Gradient(colors: [
+                        Color.blue.opacity(0.0),
+                        Color.blue.opacity(1.0)
+                    ])
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .linearGradient(
+                        gradient,
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: size.width, y: 0)
+                    ))
+                }
+            }
+            try TestImageGenerator.generate(name: "alpha_gradient_b") {
+                Canvas { context, size in
+                    // Stepped gradient
+                    let steps = 5
+                    let stepWidth = size.width / CGFloat(steps)
+                    for i in 0..<steps {
+                        let opacity = Double(i) / Double(steps - 1)
+                        let rect = CGRect(x: CGFloat(i) * stepWidth, y: 0, width: stepWidth, height: size.height)
+                        context.fill(Path(rect), with: .color(.blue.opacity(opacity)))
+                    }
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "alpha_gradient_a")
+        let imageB = try loadImage(named: "alpha_gradient_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "alpha_gradient_a.exr", rhsPath: "alpha_gradient_b.exr")
+        #expect(cpuPSNR > 10.0 && cpuPSNR < 120.0, "CPU: Alpha gradient should have 10 < PSNR < 120 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR > 10.0 && gpuPSNR < 120.0, "GPU: Alpha gradient should have 10 < PSNR < 120 dB, got \(gpuPSNR)")
+    }
+
+    // MARK: - Gradient Tests
+
+    @Test("Identical color gradients (CPU and GPU)")
+    func testIdenticalGradients() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "gradient_identical_a") {
+                Canvas { context, size in
+                    let gradient = Gradient(colors: [Color.blue, Color.red])
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .linearGradient(
+                        gradient,
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: size.width, y: 0)
+                    ))
+                }
+            }
+            try TestImageGenerator.generate(name: "gradient_identical_b") {
+                Canvas { context, size in
+                    let gradient = Gradient(colors: [Color.blue, Color.red])
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .linearGradient(
+                        gradient,
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: size.width, y: 0)
+                    ))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "gradient_identical_a")
+        let imageB = try loadImage(named: "gradient_identical_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "gradient_identical_a.exr", rhsPath: "gradient_identical_b.exr")
+        #expect(cpuPSNR >= 120.0, "CPU: Identical gradients should have PSNR >= 120 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR >= 120.0, "GPU: Identical gradients should have PSNR >= 120 dB, got \(gpuPSNR)")
+    }
+
+    @Test("Different gradient directions (CPU and GPU)")
+    func testDifferentGradientDirections() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "gradient_direction_a") {
+                Canvas { context, size in
+                    let gradient = Gradient(colors: [Color.blue, Color.red])
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .linearGradient(
+                        gradient,
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: size.width, y: 0)
+                    ))
+                }
+            }
+            try TestImageGenerator.generate(name: "gradient_direction_b") {
+                Canvas { context, size in
+                    let gradient = Gradient(colors: [Color.blue, Color.red])
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .linearGradient(
+                        gradient,
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: 0, y: size.height)
+                    ))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "gradient_direction_a")
+        let imageB = try loadImage(named: "gradient_direction_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "gradient_direction_a.exr", rhsPath: "gradient_direction_b.exr")
+        #expect(cpuPSNR < 30.0, "CPU: Different gradient directions should have PSNR < 30 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR < 30.0, "GPU: Different gradient directions should have PSNR < 30 dB, got \(gpuPSNR)")
+    }
+
+    @Test("Smooth vs banded gradient (CPU and GPU)")
+    func testSmoothVsBandedGradient() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "gradient_smooth_a") {
+                Canvas { context, size in
+                    let gradient = Gradient(colors: [Color.blue, Color.red])
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .linearGradient(
+                        gradient,
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: size.width, y: 0)
+                    ))
+                }
+            }
+            try TestImageGenerator.generate(name: "gradient_smooth_b") {
+                Canvas { context, size in
+                    // Posterized gradient with 5 bands
+                    let bands = 5
+                    let bandWidth = size.width / CGFloat(bands)
+                    for i in 0..<bands {
+                        let t = Double(i) / Double(bands - 1)
+                        let color = Color(
+                            red: (1 - t) * 0 + t * 1,
+                            green: 0,
+                            blue: (1 - t) * 1 + t * 0
+                        )
+                        let rect = CGRect(x: CGFloat(i) * bandWidth, y: 0, width: bandWidth, height: size.height)
+                        context.fill(Path(rect), with: .color(color))
+                    }
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "gradient_smooth_a")
+        let imageB = try loadImage(named: "gradient_smooth_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "gradient_smooth_a.exr", rhsPath: "gradient_smooth_b.exr")
+        #expect(cpuPSNR > 10.0 && cpuPSNR < 120.0, "CPU: Smooth vs banded gradient should have 10 < PSNR < 120 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR > 10.0 && gpuPSNR < 120.0, "GPU: Smooth vs banded gradient should have 10 < PSNR < 120 dB, got \(gpuPSNR)")
+    }
+
+    // MARK: - Size Tests
+
+    @Test("Small identical images 64x64 (CPU and GPU)")
+    func testSmallIdenticalImages() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "small_identical_a", size: CGSize(width: 64, height: 64)) {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "small_identical_b", size: CGSize(width: 64, height: 64)) {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "small_identical_a")
+        let imageB = try loadImage(named: "small_identical_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "small_identical_a.exr", rhsPath: "small_identical_b.exr")
+        #expect(cpuPSNR >= 120.0, "CPU: Small identical images should have PSNR >= 120 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR >= 120.0, "GPU: Small identical images should have PSNR >= 120 dB, got \(gpuPSNR)")
+    }
+
+    @Test("Large identical images 1024x1024 (CPU and GPU)")
+    func testLargeIdenticalImages() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "large_identical_a", size: CGSize(width: 1024, height: 1024)) {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "large_identical_b", size: CGSize(width: 1024, height: 1024)) {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "large_identical_a")
+        let imageB = try loadImage(named: "large_identical_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "large_identical_a.exr", rhsPath: "large_identical_b.exr")
+        #expect(cpuPSNR >= 120.0, "CPU: Large identical images should have PSNR >= 120 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR >= 120.0, "GPU: Large identical images should have PSNR >= 120 dB, got \(gpuPSNR)")
+    }
+
+    @Test("Non-square identical images 512x256 (CPU and GPU)")
+    func testNonSquareIdenticalImages() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "nonsquare_identical_a", size: CGSize(width: 512, height: 256)) {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "nonsquare_identical_b", size: CGSize(width: 512, height: 256)) {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "nonsquare_identical_a")
+        let imageB = try loadImage(named: "nonsquare_identical_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "nonsquare_identical_a.exr", rhsPath: "nonsquare_identical_b.exr")
+        #expect(cpuPSNR >= 120.0, "CPU: Non-square identical images should have PSNR >= 120 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR >= 120.0, "GPU: Non-square identical images should have PSNR >= 120 dB, got \(gpuPSNR)")
+    }
+
+    // MARK: - Edge Case Tests
+
+    @Test("Single pixel difference at different locations (CPU and GPU)")
+    func testSinglePixelDifferentLocations() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "pixel_corner_a") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                    // White pixel at corner
+                    let pixelPath = Path(CGRect(x: 0, y: 0, width: 1, height: 1))
+                    context.fill(pixelPath, with: .color(.white))
+                }
+            }
+            try TestImageGenerator.generate(name: "pixel_corner_b") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.blue))
+                    // White pixel at center
+                    let pixelPath = Path(CGRect(x: size.width / 2, y: size.height / 2, width: 1, height: 1))
+                    context.fill(pixelPath, with: .color(.white))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "pixel_corner_a")
+        let imageB = try loadImage(named: "pixel_corner_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "pixel_corner_a.exr", rhsPath: "pixel_corner_b.exr")
+        #expect(cpuPSNR < 120.0, "CPU: Single pixel at different locations should have PSNR < 120 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR < 120.0, "GPU: Single pixel at different locations should have PSNR < 120 dB, got \(gpuPSNR)")
+    }
+
+    // NOTE: Removed "Clean vs noisy" test - SwiftUI Canvas doesn't render per-pixel noise well
+    // The generated images were identical despite noise code. Would need a different approach
+    // to generate actual noisy images (perhaps loading from a pre-made noisy image file).
+
+    @Test("Checkerboard patterns of different scales (CPU and GPU)")
+    func testCheckerboardPatterns() async throws {
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "checker_8x8_a") {
+                Canvas { context, size in
+                    let tileSize = size.width / 8
+                    for row in 0..<8 {
+                        for col in 0..<8 {
+                            let color = (row + col) % 2 == 0 ? Color.blue : Color.red
+                            let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
+                            context.fill(Path(rect), with: .color(color))
+                        }
+                    }
+                }
+            }
+            try TestImageGenerator.generate(name: "checker_8x8_b") {
+                Canvas { context, size in
+                    let tileSize = size.width / 16
+                    for row in 0..<16 {
+                        for col in 0..<16 {
+                            let color = (row + col) % 2 == 0 ? Color.blue : Color.red
+                            let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
+                            context.fill(Path(rect), with: .color(color))
+                        }
+                    }
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "checker_8x8_a")
+        let imageB = try loadImage(named: "checker_8x8_b")
+
+        let cpuPSNR = try calculatePSNR(lhs: imageA, rhs: imageB, lhsPath: "checker_8x8_a.exr", rhsPath: "checker_8x8_b.exr")
+        #expect(cpuPSNR < 30.0, "CPU: Different checkerboard patterns should have PSNR < 30 dB, got \(cpuPSNR)")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw TestError.metalNotAvailable
+        }
+        let textureA = try makeTexture(from: imageA, device: device)
+        let textureB = try makeTexture(from: imageB, device: device)
+        let gpuPSNR = try calculatePSNR(lhs: textureA, rhs: textureB)
+        #expect(gpuPSNR < 30.0, "GPU: Different checkerboard patterns should have PSNR < 30 dB, got \(gpuPSNR)")
+    }
+}
+
+enum TestError: Error, CustomStringConvertible {
+    case failedToLoadImage(String)
+    case metalNotAvailable
+
+    var description: String {
+        switch self {
+        case .failedToLoadImage(let path):
+            return "Failed to load image from: \(path)"
+        case .metalNotAvailable:
+            return "Metal is not available on this system"
+        }
+    }
+}
