@@ -27,6 +27,11 @@ public struct GoldenImageComparison {
     public var imageDirectory: URL
     public var options: Options
 
+    public init(imageDirectory: URL, options: Options) {
+        self.imageDirectory = imageDirectory
+        self.options = options
+    }
+
     public func image(image: CGImage, matchesGoldenImageNamed name: String) throws -> Bool {
         // Find golden image in the directory
         let goldenImageURL = FileManager.default.url(ofDirectory: imageDirectory, named: name, conformingTo: .image)
