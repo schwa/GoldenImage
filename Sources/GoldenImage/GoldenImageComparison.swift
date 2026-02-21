@@ -26,10 +26,15 @@ public struct GoldenImageComparison {
 
     public var imageDirectory: URL
     public var options: Options
+    /// PSNR threshold for considering images as matching.
+    /// Default is 120 dB (identical or nearly identical).
+    /// Use lower values (e.g., 40 dB) for tests with text/fonts that may vary slightly.
+    public var psnrThreshold: Double
 
-    public init(imageDirectory: URL, options: Options) {
+    public init(imageDirectory: URL, options: Options = .none, psnrThreshold: Double = 120.0) {
         self.imageDirectory = imageDirectory
         self.options = options
+        self.psnrThreshold = psnrThreshold
     }
 
     public func image(image: CGImage, matchesGoldenImageNamed name: String) throws -> Bool {
@@ -74,9 +79,10 @@ public struct GoldenImageComparison {
         let comparisonImage: CGImage
         if options.contains(.roundTripToDisk) {
             let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(name).png")
+                .appendingPathComponent("GoldenImageRoundTrip-\(UUID()).png")
 
             try normalizedInput.write(to: tempURL)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
 
             guard let imageSource = CGImageSourceCreateWithURL(tempURL as CFURL, nil),
                   let reloadedImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
@@ -94,8 +100,8 @@ public struct GoldenImageComparison {
 
         let result = try ImageComparison().compare(comparisonImage, normalizedGolden)
 
-        // Return true if images are identical (PSNR >= 120 dB)
-        return result.psnr >= 120.0
+        // Return true if PSNR meets threshold
+        return result.psnr >= psnrThreshold
     }
 }
 
