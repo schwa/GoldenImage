@@ -12,6 +12,8 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
       - uses: actions/checkout@v3
+      - name: Install ImageMagick
+        run: brew install imagemagick
       - name: Build (macOS)
         run: swift build -v -Xswiftc -warnings-as-errors
       - name: Test (macOS)
