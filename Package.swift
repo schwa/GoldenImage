@@ -6,7 +6,7 @@ let package = Package(
     name: "GoldenImage",
     platforms: [
         .macOS(.v15),
-        .iOS(.v14),
+        .iOS(.v18),
     ],
     products: [
         .library(
