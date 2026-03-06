@@ -97,7 +97,7 @@ final class TextureCompare: Sendable {
         } else if let bundleLibrary = try? device.makeDefaultLibrary(bundle: Bundle.module) {
             library = bundleLibrary
         } else if let shaderURL = Bundle.module.url(forResource: "TextureComparison", withExtension: "metal"),
-                  let shaderSource = try? String(contentsOf: shaderURL),
+                  let shaderSource = try? String(contentsOf: shaderURL, encoding: .utf8),
                   let sourceLibrary = try? device.makeLibrary(source: shaderSource, options: nil) {
             library = sourceLibrary
         } else {
