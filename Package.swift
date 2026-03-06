@@ -5,7 +5,8 @@ import PackageDescription
 let package = Package(
     name: "GoldenImage",
     platforms: [
-        .macOS(.v15)
+        .macOS(.v15),
+        .iOS(.v14),
     ],
     products: [
         .library(
