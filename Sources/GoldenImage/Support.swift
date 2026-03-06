@@ -152,6 +152,7 @@ extension CGImage {
     }
 }
 
+#if canImport(AppKit)
 import AppKit
 
 extension URL {
@@ -159,3 +160,4 @@ extension URL {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: self.path)
     }
 }
+#endif
