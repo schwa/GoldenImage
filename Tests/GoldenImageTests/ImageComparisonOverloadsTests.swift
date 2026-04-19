@@ -1,15 +1,14 @@
-import Testing
-import Foundation
 import CoreGraphics
 import CoreImage
+import Foundation
 import ImageIO
 import Metal
 import SwiftUI
+import Testing
 @testable import GoldenImage
 
 @Suite("ImageComparison overloads")
 struct ImageComparisonOverloadsTests {
-
     // MARK: - Helpers
 
     private func resourceURL(named name: String) -> URL {
@@ -180,7 +179,7 @@ struct ImageComparisonOverloadsTests {
         let width = max(1, imageA.width / 2)
         let height = max(1, imageA.height / 2)
         guard let colorSpace = imageA.colorSpace,
-              let ctx = CGContext(
+            let ctx = CGContext(
                 data: nil,
                 width: width,
                 height: height,
@@ -188,8 +187,8 @@ struct ImageComparisonOverloadsTests {
                 bytesPerRow: 0,
                 space: colorSpace,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ),
-              let imageB = ctx.makeImage() else {
+            ),
+            let imageB = ctx.makeImage() else {
             Issue.record("Failed to create mismatched image")
             return
         }
@@ -210,7 +209,7 @@ struct ImageComparisonOverloadsTests {
 
         // Create a same-size image in a different color space.
         guard let otherSpace = CGColorSpace(name: CGColorSpace.displayP3),
-              let ctx = CGContext(
+            let ctx = CGContext(
                 data: nil,
                 width: width,
                 height: height,
@@ -218,8 +217,8 @@ struct ImageComparisonOverloadsTests {
                 bytesPerRow: 0,
                 space: otherSpace,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ),
-              let imageB = ctx.makeImage() else {
+            ),
+            let imageB = ctx.makeImage() else {
             Issue.record("Failed to create differently-colored image")
             return
         }
