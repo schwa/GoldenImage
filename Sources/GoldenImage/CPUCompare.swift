@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 
 internal struct CPUCompare: Sendable {
-
     /// Create a grayscale difference image between two CGImages.
     /// Each pixel's intensity represents the normalized difference (0 = identical, 1 = max difference).
     /// - Parameters:
@@ -16,7 +15,7 @@ internal struct CPUCompare: Sendable {
         }
 
         guard let lhsColorSpace = lhs.colorSpace,
-              let rhsColorSpace = rhs.colorSpace else {
+            let rhsColorSpace = rhs.colorSpace else {
             throw TextureComparisonError.failedToCreateTexture
         }
 
@@ -134,7 +133,7 @@ internal struct CPUCompare: Sendable {
         }
 
         guard let lhsColorSpace = lhs.colorSpace,
-              let rhsColorSpace = rhs.colorSpace else {
+            let rhsColorSpace = rhs.colorSpace else {
             throw TextureComparisonError.failedToCreateTexture
         }
 

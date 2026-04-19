@@ -5,7 +5,7 @@ import Metal
 import MetalKit
 
 /// Errors that can occur during texture comparison operations.
-enum TextureComparisonError: Error {
+internal enum TextureComparisonError: Error {
     case noMetalDevice
     case failedToCreateCommandQueue
     case failedToLoadLibrary
@@ -22,7 +22,7 @@ enum TextureComparisonError: Error {
     case colorSpaceMismatch(lhs: CGColorSpace, rhs: CGColorSpace)
 }
 
-final class TextureCompare: Sendable {
+internal final class TextureCompare: Sendable {
     static let shared = TextureCompare()
 
     let device: MTLDevice
@@ -81,7 +81,7 @@ final class TextureCompare: Sendable {
     }
 
     private init() {
-        guard let device = MTLCreateSystemDefaultDevice() else {
+        guard let device = _MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not supported on this device")
         }
         self.device = device
@@ -97,8 +97,8 @@ final class TextureCompare: Sendable {
         } else if let bundleLibrary = try? device.makeDefaultLibrary(bundle: Bundle.module) {
             library = bundleLibrary
         } else if let shaderURL = Bundle.module.url(forResource: "TextureComparison", withExtension: "metal"),
-                  let shaderSource = try? String(contentsOf: shaderURL, encoding: .utf8),
-                  let sourceLibrary = try? device.makeLibrary(source: shaderSource, options: nil) {
+            let shaderSource = try? String(contentsOf: shaderURL, encoding: .utf8),
+            let sourceLibrary = try? device.makeLibrary(source: shaderSource, options: nil) {
             library = sourceLibrary
         } else {
             fatalError("Failed to load Metal shader library")
@@ -128,7 +128,7 @@ final class TextureCompare: Sendable {
         }
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw TextureComparisonError.failedToCreateCommandBuffer
         }
 

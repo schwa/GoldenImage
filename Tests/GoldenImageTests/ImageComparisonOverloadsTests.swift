@@ -1,14 +1,14 @@
 import CoreGraphics
 import CoreImage
 import Foundation
+@testable import GoldenImage
 import ImageIO
 import Metal
 import SwiftUI
 import Testing
-@testable import GoldenImage
 
 @Suite("ImageComparison overloads")
-struct ImageComparisonOverloadsTests {
+internal struct ImageComparisonOverloadsTests {
     // MARK: - Helpers
 
     private func resourceURL(named name: String) -> URL {
@@ -21,7 +21,7 @@ struct ImageComparisonOverloadsTests {
     private func loadResourceImage(named name: String) throws -> CGImage {
         let url = resourceURL(named: name)
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+            let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
             throw TestError.failedToLoadImage(url.path)
         }
         return img

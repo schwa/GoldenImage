@@ -5,7 +5,7 @@ import GoldenImage
 import ImageIO
 
 @main
-struct GoldenImageCLI: ParsableCommand {
+internal struct GoldenImageCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "golden-image-compare",
         abstract: "Calculate PSNR between two images using GPU acceleration"

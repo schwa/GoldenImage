@@ -1,15 +1,14 @@
 import Foundation
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
-import ImageIO
 
 #if canImport(AppKit)
 import AppKit
 #endif
 
 /// Generates test images for the test suite
-struct TestImageGenerator {
-
+internal struct TestImageGenerator {
     /// The cache directory where test images are stored
     static var cacheDirectory: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -79,7 +78,7 @@ struct TestImageGenerator {
     }
 }
 
-enum TestImageError: Error, CustomStringConvertible {
+internal enum TestImageError: Error, CustomStringConvertible {
     case failedToRender(String)
     case failedToCreateDestination(String)
     case failedToWriteImage(String)

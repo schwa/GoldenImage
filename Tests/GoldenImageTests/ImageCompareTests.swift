@@ -1,13 +1,12 @@
-import Testing
-import Foundation
 import CoreGraphics
+import Foundation
+@testable import GoldenImage
 import ImageIO
 import Metal
 import SwiftUI
-@testable import GoldenImage
+import Testing
 
-struct ImageCompareTests {
-
+internal struct ImageCompareTests {
     private static let magickPath: String? = {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
@@ -28,7 +27,7 @@ struct ImageCompareTests {
         let url = TestImageGenerator.imageURL(named: name)
 
         guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw TestError.failedToLoadImage(url.path)
         }
 
@@ -43,7 +42,7 @@ struct ImageCompareTests {
             .appendingPathComponent("\(name).png")
 
         guard let imageSource = CGImageSourceCreateWithURL(resourcesURL as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw TestError.failedToLoadImage(resourcesURL.path)
         }
 
@@ -81,7 +80,9 @@ struct ImageCompareTests {
     /// Compare two images using ImageMagick and return PSNR.
     /// Returns `nil` if ImageMagick is unavailable or can't handle the input (e.g. EXR).
     private func compareImageMagick(urlA: URL, urlB: URL) -> Double? {
-        guard let magickPath = Self.magickPath else { return nil }
+        guard let magickPath = Self.magickPath else {
+            return nil
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: magickPath)
@@ -294,7 +295,7 @@ struct ImageCompareTests {
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .linearGradient(
                         gradient,
-                        startPoint: CGPoint(x: 0, y: 0),
+                        startPoint: .zero,
                         endPoint: CGPoint(x: size.width, y: 0)
                     ))
                 }
@@ -340,7 +341,7 @@ struct ImageCompareTests {
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .linearGradient(
                         gradient,
-                        startPoint: CGPoint(x: 0, y: 0),
+                        startPoint: .zero,
                         endPoint: CGPoint(x: size.width, y: 0)
                     ))
                 }
@@ -351,7 +352,7 @@ struct ImageCompareTests {
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .linearGradient(
                         gradient,
-                        startPoint: CGPoint(x: 0, y: 0),
+                        startPoint: .zero,
                         endPoint: CGPoint(x: size.width, y: 0)
                     ))
                 }
@@ -381,7 +382,7 @@ struct ImageCompareTests {
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .linearGradient(
                         gradient,
-                        startPoint: CGPoint(x: 0, y: 0),
+                        startPoint: .zero,
                         endPoint: CGPoint(x: size.width, y: 0)
                     ))
                 }
@@ -392,7 +393,7 @@ struct ImageCompareTests {
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .linearGradient(
                         gradient,
-                        startPoint: CGPoint(x: 0, y: 0),
+                        startPoint: .zero,
                         endPoint: CGPoint(x: 0, y: size.height)
                     ))
                 }
@@ -422,7 +423,7 @@ struct ImageCompareTests {
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .linearGradient(
                         gradient,
-                        startPoint: CGPoint(x: 0, y: 0),
+                        startPoint: .zero,
                         endPoint: CGPoint(x: size.width, y: 0)
                     ))
                 }
@@ -496,13 +497,13 @@ struct ImageCompareTests {
     @Test
     func testLargeIdenticalImages() async throws {
         try await MainActor.run {
-            try TestImageGenerator.generate(name: "large_identical_a", size: CGSize(width: 1024, height: 1024)) {
+            try TestImageGenerator.generate(name: "large_identical_a", size: CGSize(width: 1_024, height: 1_024)) {
                 Canvas { context, size in
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .color(.blue))
                 }
             }
-            try TestImageGenerator.generate(name: "large_identical_b", size: CGSize(width: 1024, height: 1024)) {
+            try TestImageGenerator.generate(name: "large_identical_b", size: CGSize(width: 1_024, height: 1_024)) {
                 Canvas { context, size in
                     let rect = CGRect(origin: .zero, size: size)
                     context.fill(Path(rect), with: .color(.blue))
@@ -606,7 +607,7 @@ struct ImageCompareTests {
                     let tileSize = size.width / 8
                     for row in 0..<8 {
                         for col in 0..<8 {
-                            let color = (row + col) % 2 == 0 ? Color.blue : Color.red
+                            let color = (row + col).isMultiple(of: 2) ? Color.blue : Color.red
                             let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
                             context.fill(Path(rect), with: .color(color))
                         }
@@ -618,7 +619,7 @@ struct ImageCompareTests {
                     let tileSize = size.width / 16
                     for row in 0..<16 {
                         for col in 0..<16 {
-                            let color = (row + col) % 2 == 0 ? Color.blue : Color.red
+                            let color = (row + col).isMultiple(of: 2) ? Color.blue : Color.red
                             let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
                             context.fill(Path(rect), with: .color(color))
                         }
@@ -664,7 +665,7 @@ struct ImageCompareTests {
     }
 }
 
-enum TestError: Error {
+internal enum TestError: Error {
     case failedToLoadImage(String)
     case metalNotAvailable
     case imageMagickFailed(String)

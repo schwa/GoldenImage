@@ -4,7 +4,6 @@ import ImageIO
 import UniformTypeIdentifiers
 
 public struct GoldenImageComparison {
-
     public struct Options: OptionSet, Sendable {
         public let rawValue: Int
 
@@ -12,16 +11,16 @@ public struct GoldenImageComparison {
             self.rawValue = rawValue
         }
 
-        public static let none = Options([])
+        public static let none = Self([])
 
         // If set then we save our input image to disk first then compare via url
-        public static let roundTripToDisk = Options(rawValue: 1 << 0)
+        public static let roundTripToDisk = Self(rawValue: 1 << 0)
 
         // If set do not do compare alpha
-        public static let ignoreAlpha = Options(rawValue: 2 << 0)
+        public static let ignoreAlpha = Self(rawValue: 2 << 0)
 
         // If set copy any images we use to temp
-        public static let copyToTemp = Options(rawValue: 3 << 0)
+        public static let copyToTemp = Self(rawValue: 3 << 0)
     }
 
     public var imageDirectory: URL
@@ -50,8 +49,12 @@ public struct GoldenImageComparison {
         // Find golden image in the directory
         let goldenImageURL = FileManager.default.url(ofDirectory: imageDirectory, named: name, conformingTo: .image)
 
+        guard let extendedLinearSRGB = CGColorSpace(name: CGColorSpace.extendedLinearSRGB) else {
+            throw GoldenImageError.failedToCreateColorSpace
+        }
+
         // If no golden image exists, always save the input image for manual copying
-        if goldenImageURL == nil {
+        guard let goldenImageURL else {
             let outputDir = failureOutputDirectory
                 ?? FileManager.default.temporaryDirectory.appendingPathComponent("GoldenImages")
             let tempURL = outputDir.appendingPathComponent("\(name).png")
@@ -60,27 +63,29 @@ public struct GoldenImageComparison {
             try FileManager.default.createDirectory(at: tempURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
             // Normalize to extended linear sRGB before saving
-            let targetColorSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
-            let normalizedImage = image.copy(colorSpace: targetColorSpace)!
+            guard let normalizedImage = image.copy(colorSpace: extendedLinearSRGB) else {
+                throw GoldenImageError.failedToNormalizeImage
+            }
             try normalizedImage.write(to: tempURL)
 
             throw GoldenImageError.noGoldenImage(savedTo: tempURL)
         }
 
         // Load golden image from disk
-        guard let imageSource = CGImageSourceCreateWithURL(goldenImageURL! as CFURL, nil),
-              let goldenImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+        guard let imageSource = CGImageSourceCreateWithURL(goldenImageURL as CFURL, nil),
+            let goldenImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw GoldenImageError.noGoldenImage(savedTo: nil)
         }
 
         // Normalize both images to extended linear sRGB for consistent comparison
-        let targetColorSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
-        let normalizedInput = image.copy(colorSpace: targetColorSpace)!
-        let normalizedGolden = goldenImage.copy(colorSpace: targetColorSpace)!
+        guard let normalizedInput = image.copy(colorSpace: extendedLinearSRGB),
+            let normalizedGolden = goldenImage.copy(colorSpace: extendedLinearSRGB) else {
+            throw GoldenImageError.failedToNormalizeImage
+        }
 
         // Validate dimensions match
         guard normalizedInput.width == normalizedGolden.width,
-              normalizedInput.height == normalizedGolden.height else {
+            normalizedInput.height == normalizedGolden.height else {
             throw TextureComparisonError.dimensionMismatch
         }
 
@@ -94,12 +99,15 @@ public struct GoldenImageComparison {
             defer { try? FileManager.default.removeItem(at: tempURL) }
 
             guard let imageSource = CGImageSourceCreateWithURL(tempURL as CFURL, nil),
-                  let reloadedImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                let reloadedImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
                 throw GoldenImageError.noGoldenImage(savedTo: nil)
             }
 
             // Normalize reloaded image to extended linear sRGB (PNG may lose extended range flag)
-            comparisonImage = reloadedImage.copy(colorSpace: targetColorSpace)!
+            guard let normalizedReloaded = reloadedImage.copy(colorSpace: extendedLinearSRGB) else {
+                throw GoldenImageError.failedToNormalizeImage
+            }
+            comparisonImage = normalizedReloaded
         } else {
             comparisonImage = normalizedInput
         }
@@ -114,6 +122,8 @@ public struct GoldenImageComparison {
     }
 }
 
-enum GoldenImageError: Error {
+public enum GoldenImageError: Error {
     case noGoldenImage(savedTo: URL?)
+    case failedToCreateColorSpace
+    case failedToNormalizeImage
 }

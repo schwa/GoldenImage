@@ -1,12 +1,11 @@
-import Testing
-import Foundation
 import CoreGraphics
-import ImageIO
+import Foundation
 @testable import GoldenImage
+import ImageIO
+import Testing
 
 @Suite("GoldenImageComparison Tests")
-struct GoldenImageComparisonTests {
-
+internal struct GoldenImageComparisonTests {
     // MARK: - Helper Methods
 
     /// Load a CGImage from the Resources directory
@@ -14,7 +13,7 @@ struct GoldenImageComparisonTests {
         let resourceURL = resourcesURL.appendingPathComponent("\(name).png")
 
         guard let imageSource = CGImageSourceCreateWithURL(resourceURL as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw TestError.failedToLoadImage(resourceURL.path)
         }
 
@@ -23,7 +22,10 @@ struct GoldenImageComparisonTests {
 
     /// Get the Resources directory URL
     private var resourcesURL: URL {
-        Bundle.module.resourceURL!
+        guard let url = Bundle.module.resourceURL else {
+            fatalError("Bundle.module has no resourceURL")
+        }
+        return url
     }
 
     // MARK: - Tests

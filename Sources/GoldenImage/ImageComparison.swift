@@ -1,19 +1,18 @@
+import CoreGraphics
 import CoreImage
 import Foundation
 import Metal
-import CoreGraphics
 import SwiftUI
 
 public struct ImageComparison: Sendable {
     struct Options: OptionSet {
         let rawValue: Int
 
-        static let none = Options([])
+        static let none = Self([])
     }
 
-
     public init() {
-
+        // No-op.
     }
 
     public struct Result: Hashable, Sendable {
@@ -63,34 +62,22 @@ public extension ImageComparison {
     }
 }
 
+private func loadImage(at url: URL) throws -> CGImage {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+        let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        throw TextureComparisonError.failedToCreateTexture
+    }
+    return image
+}
+
 public extension ImageComparison {
     func compare(_ lhs: URL, _ rhs: URL) throws -> Result {
-        guard let lhsImageSource = CGImageSourceCreateWithURL(lhs as CFURL, nil),
-              let lhsImage = CGImageSourceCreateImageAtIndex(lhsImageSource, 0, nil) else {
-            throw TextureComparisonError.failedToCreateTexture
-        }
-
-        guard let rhsImageSource = CGImageSourceCreateWithURL(rhs as CFURL, nil),
-              let rhsImage = CGImageSourceCreateImageAtIndex(rhsImageSource, 0, nil) else {
-            throw TextureComparisonError.failedToCreateTexture
-        }
-
-        return try compare(lhsImage, rhsImage)
+        try compare(loadImage(at: lhs), loadImage(at: rhs))
     }
 
     /// Create a grayscale difference image between two images at the given URLs.
     func differenceImage(_ lhs: URL, _ rhs: URL) throws -> CGImage {
-        guard let lhsImageSource = CGImageSourceCreateWithURL(lhs as CFURL, nil),
-              let lhsImage = CGImageSourceCreateImageAtIndex(lhsImageSource, 0, nil) else {
-            throw TextureComparisonError.failedToCreateTexture
-        }
-
-        guard let rhsImageSource = CGImageSourceCreateWithURL(rhs as CFURL, nil),
-              let rhsImage = CGImageSourceCreateImageAtIndex(rhsImageSource, 0, nil) else {
-            throw TextureComparisonError.failedToCreateTexture
-        }
-
-        return try differenceImage(lhsImage, rhsImage)
+        try differenceImage(loadImage(at: lhs), loadImage(at: rhs))
     }
 }
 
@@ -135,4 +122,3 @@ public extension ImageComparison {
         return Result(psnr: psnr)
     }
 }
-
