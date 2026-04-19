@@ -1,8 +1,7 @@
 import CoreGraphics
-import CoreImage
 import Foundation
+import ImageIO
 import Metal
-import MetalKit
 import UniformTypeIdentifiers
 
 // swiftlint:disable MTLCreateSystemDefaultDevice
@@ -68,42 +67,6 @@ internal func makeTexture(from image: CGImage, device: MTLDevice) throws -> MTLT
     return texture
 }
 
-/// Convert CIImage to Metal texture, normalizing to linear RGB color space.
-internal func makeTexture(from image: CIImage, device: MTLDevice) throws -> MTLTexture {
-    guard let linearColorSpace = CGColorSpace(name: CGColorSpace.linearSRGB) else {
-        throw TextureComparisonError.failedToCreateTexture
-    }
-
-    let context = CIContext(mtlDevice: device, options: [.workingColorSpace: linearColorSpace])
-
-    let width = Int(image.extent.width)
-    let height = Int(image.extent.height)
-
-    let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-        pixelFormat: .rgba8Unorm,
-        width: width,
-        height: height,
-        mipmapped: false
-    )
-    descriptor.usage = [.shaderRead, .shaderWrite]
-
-    guard let texture = device.makeTexture(descriptor: descriptor) else {
-        throw TextureComparisonError.failedToCreateTexture
-    }
-
-    guard let commandQueue = device.makeCommandQueue(),
-        let commandBuffer = commandQueue.makeCommandBuffer() else {
-        throw TextureComparisonError.failedToCreateCommandBuffer
-    }
-
-    context.render(image, to: texture, commandBuffer: commandBuffer, bounds: image.extent, colorSpace: linearColorSpace)
-
-    commandBuffer.commit()
-    commandBuffer.waitUntilCompleted()
-
-    return texture
-}
-
 extension FileManager {
     func url(ofDirectory directory: URL, named name: String, conformingTo: UTType) -> URL? {
         guard let contents = try? contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentTypeKey]) else {
@@ -138,31 +101,4 @@ extension CGImage {
         }
     }
 
-    func writeEXR(to url: URL, compression: String = "ZIP") throws {
-        assert(url.pathExtension.lowercased() == "exr", "URL must have .exr extension")
-        guard let imageDestination = CGImageDestinationCreateWithURL(url as CFURL, UTType.exr.identifier as CFString, 1, nil) else {
-            fatalError("Failed to create image destination")
-        }
-        // let exrOptions: [CFString: Any] = [
-        //     kCGImagePropertyOpenEXRCompression: compression // "ZIP" // or "PIZ", "RLE", etc.
-        // ]
-        // let options: [CFString: Any] = [
-        //     kCGImagePropertyOpenEXRDictionary: exrOptions
-        // ]
-        // CGImageDestinationAddImage(imageDestination, self, options as CFDictionary)
-        CGImageDestinationAddImage(imageDestination, self, nil)
-        guard CGImageDestinationFinalize(imageDestination) else {
-            throw NSError(domain: "GoldenImage", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to write image to \(url.path)"])
-        }
-    }
 }
-
-#if canImport(AppKit)
-import AppKit
-
-extension URL {
-    func reveal() {
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: self.path)
-    }
-}
-#endif

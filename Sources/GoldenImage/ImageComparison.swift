@@ -5,12 +5,6 @@ import Metal
 import SwiftUI
 
 public struct ImageComparison: Sendable {
-    struct Options: OptionSet {
-        let rawValue: Int
-
-        static let none = Self([])
-    }
-
     public init() {
         // No-op.
     }
