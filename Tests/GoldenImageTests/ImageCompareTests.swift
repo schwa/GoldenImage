@@ -78,24 +78,28 @@ struct ImageCompareTests {
         return result.psnr
     }
 
-    /// Compare two images using ImageMagick and return PSNR
-    private func compareImageMagick(urlA: URL, urlB: URL) throws -> Double {
+    /// Compare two images using ImageMagick and return PSNR.
+    /// Returns `nil` if ImageMagick is unavailable or can't handle the input (e.g. EXR).
+    private func compareImageMagick(urlA: URL, urlB: URL) -> Double? {
+        guard let magickPath = Self.magickPath else { return nil }
+
         let process = Process()
-        guard let magickPath = Self.magickPath else {
-            throw TestError.imageMagickFailed("ImageMagick 'magick' not found in PATH")
-        }
         process.executableURL = URL(fileURLWithPath: magickPath)
         process.arguments = ["compare", "-metric", "PSNR", urlA.path, urlB.path, "null:"]
 
         let pipe = Pipe()
         process.standardError = pipe
 
-        try process.run()
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
         process.waitUntilExit()
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            throw TestError.imageMagickFailed("No output from ImageMagick")
+            return nil
         }
 
         if output.lowercased() == "inf" {
@@ -103,32 +107,26 @@ struct ImageCompareTests {
         }
 
         let psnrString = output.components(separatedBy: " ").first ?? output
-
-        guard let psnr = Double(psnrString) else {
-            throw TestError.imageMagickFailed("Failed to parse PSNR value: \(output)")
-        }
-
-        return psnr
+        return Double(psnrString)
     }
 
-    private func compareImageMagick(nameA: String, nameB: String) throws -> Double {
-        try compareImageMagick(
+    private func compareImageMagick(nameA: String, nameB: String) -> Double? {
+        compareImageMagick(
             urlA: TestImageGenerator.imageURL(named: nameA),
             urlB: TestImageGenerator.imageURL(named: nameB)
         )
     }
 
     /// Log PSNR comparison results
-    private func logComparison(name: String, cpu: Double, gpu: Double, imageMagick: Double) {
-
+    private func logComparison(name: String, cpu: Double, gpu: Double, imageMagick: Double?) {
         let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...3))
-
-        print("\(name) - CPU: \(cpu.formatted(format)) dB, GPU: \(gpu.formatted(format)) dB, ImageMagick: \(imageMagick.formatted(format)) dB")
+        let magickDesc = imageMagick.map { "\($0.formatted(format)) dB" } ?? "n/a"
+        print("\(name) - CPU: \(cpu.formatted(format)) dB, GPU: \(gpu.formatted(format)) dB, ImageMagick: \(magickDesc)")
     }
 
     // MARK: - Tests
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testIdenticalImages() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "identical_a") {
@@ -148,16 +146,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "identical_a", nameB: "identical_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "identical_a", nameB: "identical_b")
+        let magickPSNR = compareImageMagick(nameA: "identical_a", nameB: "identical_b")
 
         logComparison(name: "identical", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR >= 120.0)
         #expect(gpuPSNR >= 120.0)
-        #expect(magickPSNR >= 120.0)
+        if let magickPSNR { #expect(magickPSNR >= 120.0) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testDifferentImages() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "different_a") {
@@ -180,16 +178,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "different_a", nameB: "different_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "different_a", nameB: "different_b")
+        let magickPSNR = compareImageMagick(nameA: "different_a", nameB: "different_b")
 
         logComparison(name: "different", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR < 7.0)
         #expect(gpuPSNR < 7.0)
-        #expect(magickPSNR < 8.0)
+        if let magickPSNR { #expect(magickPSNR < 8.0) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testAlmostIdenticalImages() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "almost_a") {
@@ -211,18 +209,18 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "almost_a", nameB: "almost_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "almost_a", nameB: "almost_b")
+        let magickPSNR = compareImageMagick(nameA: "almost_a", nameB: "almost_b")
 
         logComparison(name: "almost", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect((67.0...78.0).contains(cpuPSNR))
         #expect((67.0...78.0).contains(gpuPSNR))
-        #expect((69.0...79.0).contains(magickPSNR))
+        if let magickPSNR { #expect((69.0...79.0).contains(magickPSNR)) }
     }
 
     // MARK: - Alpha/Transparency Tests
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testIdenticalWithAlpha() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "alpha_identical_a") {
@@ -244,16 +242,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "alpha_identical_a", nameB: "alpha_identical_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "alpha_identical_a", nameB: "alpha_identical_b")
+        let magickPSNR = compareImageMagick(nameA: "alpha_identical_a", nameB: "alpha_identical_b")
 
         logComparison(name: "alpha_identical", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR >= 120.0)
         #expect(gpuPSNR >= 120.0)
-        #expect(magickPSNR >= 120.0)
+        if let magickPSNR { #expect(magickPSNR >= 120.0) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testDifferentAlpha() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "alpha_different_a") {
@@ -275,16 +273,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "alpha_different_a", nameB: "alpha_different_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "alpha_different_a", nameB: "alpha_different_b")
+        let magickPSNR = compareImageMagick(nameA: "alpha_different_a", nameB: "alpha_different_b")
 
         logComparison(name: "alpha_different", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect((3.0...13.0).contains(cpuPSNR))
         #expect((3.0...13.0).contains(gpuPSNR))
-        #expect(magickPSNR < 10.0)
+        if let magickPSNR { #expect(magickPSNR < 10.0) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testAlphaGradient() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "alpha_gradient_a") {
@@ -320,7 +318,7 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "alpha_gradient_a", nameB: "alpha_gradient_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "alpha_gradient_a", nameB: "alpha_gradient_b")
+        let magickPSNR = compareImageMagick(nameA: "alpha_gradient_a", nameB: "alpha_gradient_b")
 
         logComparison(name: "alpha_gradient", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
@@ -333,7 +331,7 @@ struct ImageCompareTests {
 
     // MARK: - Gradient Tests
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testIdenticalGradients() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "gradient_identical_a") {
@@ -365,16 +363,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "gradient_identical_a", nameB: "gradient_identical_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "gradient_identical_a", nameB: "gradient_identical_b")
+        let magickPSNR = compareImageMagick(nameA: "gradient_identical_a", nameB: "gradient_identical_b")
 
         logComparison(name: "gradient_identical", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR >= 120.0)
         #expect(gpuPSNR >= 120.0)
-        #expect(magickPSNR >= 120.0)
+        if let magickPSNR { #expect(magickPSNR >= 120.0) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testDifferentGradientDirections() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "gradient_direction_a") {
@@ -406,16 +404,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "gradient_direction_a", nameB: "gradient_direction_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "gradient_direction_a", nameB: "gradient_direction_b")
+        let magickPSNR = compareImageMagick(nameA: "gradient_direction_a", nameB: "gradient_direction_b")
 
         logComparison(name: "gradient_direction", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect((4.0...15.0).contains(cpuPSNR))
         #expect((4.0...15.0).contains(gpuPSNR))
-        #expect((5.0...16.0).contains(magickPSNR))
+        if let magickPSNR { #expect((5.0...16.0).contains(magickPSNR)) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testSmoothVsBandedGradient() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "gradient_smooth_a") {
@@ -453,18 +451,18 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "gradient_smooth_a", nameB: "gradient_smooth_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "gradient_smooth_a", nameB: "gradient_smooth_b")
+        let magickPSNR = compareImageMagick(nameA: "gradient_smooth_a", nameB: "gradient_smooth_b")
 
         logComparison(name: "gradient_smooth", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect((12.0...23.0).contains(cpuPSNR))
         #expect((12.0...23.0).contains(gpuPSNR))
-        #expect((13.0...24.0).contains(magickPSNR))
+        if let magickPSNR { #expect((13.0...24.0).contains(magickPSNR)) }
     }
 
     // MARK: - Size Tests
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testSmallIdenticalImages() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "small_identical_a", size: CGSize(width: 64, height: 64)) {
@@ -486,16 +484,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "small_identical_a", nameB: "small_identical_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "small_identical_a", nameB: "small_identical_b")
+        let magickPSNR = compareImageMagick(nameA: "small_identical_a", nameB: "small_identical_b")
 
         logComparison(name: "small_identical", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR >= 120.0)
         #expect(gpuPSNR >= 120.0)
-        #expect(magickPSNR >= 120.0)
+        if let magickPSNR { #expect(magickPSNR >= 120.0) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testLargeIdenticalImages() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "large_identical_a", size: CGSize(width: 1024, height: 1024)) {
@@ -517,16 +515,16 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "large_identical_a", nameB: "large_identical_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "large_identical_a", nameB: "large_identical_b")
+        let magickPSNR = compareImageMagick(nameA: "large_identical_a", nameB: "large_identical_b")
 
         logComparison(name: "large_identical", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR >= 120.0)
         #expect(gpuPSNR >= 120.0)
-        #expect(magickPSNR >= 120.0)
+        if let magickPSNR { #expect(magickPSNR >= 120.0) }
     }
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testNonSquareIdenticalImages() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "nonsquare_identical_a", size: CGSize(width: 512, height: 256)) {
@@ -548,18 +546,18 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "nonsquare_identical_a", nameB: "nonsquare_identical_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "nonsquare_identical_a", nameB: "nonsquare_identical_b")
+        let magickPSNR = compareImageMagick(nameA: "nonsquare_identical_a", nameB: "nonsquare_identical_b")
 
         logComparison(name: "nonsquare_identical", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR >= 120.0)
         #expect(gpuPSNR >= 120.0)
-        #expect(magickPSNR >= 120.0)
+        if let magickPSNR { #expect(magickPSNR >= 120.0) }
     }
 
     // MARK: - Edge Case Tests
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testSinglePixelDifferentLocations() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "pixel_corner_a") {
@@ -587,20 +585,20 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "pixel_corner_a", nameB: "pixel_corner_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "pixel_corner_a", nameB: "pixel_corner_b")
+        let magickPSNR = compareImageMagick(nameA: "pixel_corner_a", nameB: "pixel_corner_b")
 
         logComparison(name: "pixel_corner", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect((42.0...53.0).contains(cpuPSNR))
         #expect((42.0...53.0).contains(gpuPSNR))
-        #expect((44.0...54.0).contains(magickPSNR))
+        if let magickPSNR { #expect((44.0...54.0).contains(magickPSNR)) }
     }
 
     // NOTE: Removed "Clean vs noisy" test - SwiftUI Canvas doesn't render per-pixel noise well
     // The generated images were identical despite noise code. Would need a different approach
     // to generate actual noisy images (perhaps loading from a pre-made noisy image file).
 
-    @Test(.disabled("ImageMagick doesn't support EXR"))
+    @Test
     func testCheckerboardPatterns() async throws {
         try await MainActor.run {
             try TestImageGenerator.generate(name: "checker_8x8_a") {
@@ -634,13 +632,13 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "checker_8x8_a", nameB: "checker_8x8_b")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(nameA: "checker_8x8_a", nameB: "checker_8x8_b")
+        let magickPSNR = compareImageMagick(nameA: "checker_8x8_a", nameB: "checker_8x8_b")
 
         logComparison(name: "checker_8x8", cpu: cpuPSNR, gpu: gpuPSNR, imageMagick: magickPSNR)
 
         #expect(cpuPSNR < 10.0)
         #expect(gpuPSNR < 10.0)
-        #expect((1.0...11.0).contains(magickPSNR))
+        if let magickPSNR { #expect((1.0...11.0).contains(magickPSNR)) }
     }
 
     // MARK: - Real-World Image Tests
@@ -652,7 +650,7 @@ struct ImageCompareTests {
 
         let cpuPSNR = try compareCPU(imageA: imageA, imageB: imageB, nameA: "alpha_blend", nameB: "alpha_reference")
         let gpuPSNR = try compareGPU(imageA: imageA, imageB: imageB)
-        let magickPSNR = try compareImageMagick(
+        let magickPSNR = compareImageMagick(
             urlA: resourceImageURL(named: "alpha_blend"),
             urlB: resourceImageURL(named: "alpha_reference")
         )
@@ -662,7 +660,7 @@ struct ImageCompareTests {
         // Images are identical - expect perfect PSNR of 120 dB
         #expect(cpuPSNR >= 120.0)
         #expect(gpuPSNR >= 120.0)
-        #expect(magickPSNR >= 120.0)
+        if let magickPSNR { #expect(magickPSNR >= 120.0) }
     }
 }
 
