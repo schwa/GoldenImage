@@ -30,22 +30,31 @@ public struct GoldenImageComparison {
     /// Default is 120 dB (identical or nearly identical).
     /// Use lower values (e.g., 40 dB) for tests with text/fonts that may vary slightly.
     public var psnrThreshold: Double
+    /// Directory where images are written when no golden image exists for a test.
+    /// When `nil`, defaults to `<temporaryDirectory>/GoldenImages`.
+    public var failureOutputDirectory: URL?
 
-    public init(imageDirectory: URL, options: Options = .none, psnrThreshold: Double = 120.0) {
+    public init(
+        imageDirectory: URL,
+        options: Options = .none,
+        psnrThreshold: Double = 120.0,
+        failureOutputDirectory: URL? = nil
+    ) {
         self.imageDirectory = imageDirectory
         self.options = options
         self.psnrThreshold = psnrThreshold
+        self.failureOutputDirectory = failureOutputDirectory
     }
 
     public func image(image: CGImage, matchesGoldenImageNamed name: String) throws -> Bool {
         // Find golden image in the directory
         let goldenImageURL = FileManager.default.url(ofDirectory: imageDirectory, named: name, conformingTo: .image)
 
-        // If no golden image exists, always save the input image to temp for manual copying
+        // If no golden image exists, always save the input image for manual copying
         if goldenImageURL == nil {
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("GoldenImages")
-                .appendingPathComponent("\(name).png")
+            let outputDir = failureOutputDirectory
+                ?? FileManager.default.temporaryDirectory.appendingPathComponent("GoldenImages")
+            let tempURL = outputDir.appendingPathComponent("\(name).png")
 
             // Create directory if needed
             try FileManager.default.createDirectory(at: tempURL.deletingLastPathComponent(), withIntermediateDirectories: true)
