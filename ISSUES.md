@@ -18,10 +18,12 @@ closed: 2026-04-24T20:20:34Z
 ## 2: Replace disabled ImageCompareTests with tests that don't depend on ImageMagick
 
 +++
-status: new
+status: closed
 priority: medium
 kind: task
 created: 2026-03-06T00:00:00Z
+updated: 2026-04-24T20:23:32Z
+closed: 2026-04-24T20:23:32Z
 +++
 
 14 tests in ImageCompareTests.swift are disabled because ImageMagick doesn't support EXR. These tests compare CPU/GPU PSNR results against ImageMagick as a reference. Need to either: remove the ImageMagick dependency from these tests (just test CPU vs GPU), or convert test images to a format ImageMagick supports (e.g. PNG) before comparing.
