@@ -11,12 +11,46 @@ import GoldenImage
 
 let result = try ImageComparison().compare(image1, image2)
 print("PSNR: \(result.psnr) dB")
-print("Match: \(result.isMatch)") // true if PSNR >= 120 dB
+print("Match: \(result.isMatch)") // true if PSNR >= 120 dB (effectively identical)
 
 if let erodedPSNR = result.erodedPSNR {
     print("Eroded PSNR: \(erodedPSNR) dB")  // edge-aware, ignores 1px AA halos
     print("Match (ignoring edges): \(result.isMatchIgnoringEdges)")
 }
+```
+
+### Choosing your own threshold
+
+`isMatch` and `isMatchIgnoringEdges` use a strict 120 dB threshold meaning
+*"effectively identical"*. For many real comparisons that's too strict —
+lossy compression, font hinting differences, or different rasterizers will
+easily drop PSNR into the 40–60 dB range while still being visually
+indistinguishable. Compare against your own threshold instead:
+
+```swift
+let result = try ImageComparison().compare(image1, image2)
+
+// Common thresholds:
+//   60 dB — nearly indistinguishable, tolerates encoder noise
+//   40 dB — good visual match, tolerates JPEG / heavy resampling
+//   30 dB — acceptable for thumbnails / previews
+let threshold = 40.0
+#expect(result.psnr >= threshold)
+```
+
+For the golden-image flow, pass your threshold to `GoldenImageComparison`:
+
+```swift
+let golden = GoldenImageComparison(
+    imageDirectory: goldensDirectory,
+    psnrThreshold: 40.0  // accept anything 40 dB or better
+)
+```
+
+For the CLI use `--threshold`:
+
+```bash
+golden-image-compare --threshold 40 a.png b.png
 ```
 
 ### Supported inputs
@@ -53,17 +87,8 @@ regions of error survive; single-pixel halos disappear.
 
 **Caveat.** The kernel cannot distinguish a genuine single-pixel-wide feature
 (a 1pt stroke, a hairline, an isolated pixel) from an AA halo — both are
-erased. Empirically:
-
-| Stroke width | PSNR vs. blank | Eroded PSNR | Δ |
-|---|---|---|---|
-| 1 pt | 23.6 dB | 120 dB | +96 dB ⚠️ vanishes |
-| 2 pt | 20.6 dB | 25.8 dB | +5 dB |
-| 3 pt | 18.9 dB | 21.5 dB | +3 dB |
-| 6 pt | 15.8 dB | 16.9 dB | +1 dB |
-
-Treat `psnr` as the primary signal and `erodedPSNR` as a secondary check
-answering *"does the difference survive edge erosion?"*.
+erased. Treat `psnr` as the primary signal and `erodedPSNR` as a secondary
+check answering *"does the difference survive edge erosion?"*.
 
 ### HDR comparison
 
@@ -84,93 +109,36 @@ let matches = try golden.image(image: rendered, matchesGoldenImageNamed: "my_tes
 ```
 
 If no golden image exists at that name, the input image is written to
-`failureOutputDirectory` (or `$TMPDIR/GoldenImages/` by default) and
+`failureOutputDirectory` (or `FileManager.default.temporaryDirectory` +
+`GoldenImages/` by default) and
 `GoldenImageError.noGoldenImage(savedTo:)` is thrown — so you can inspect the
 output and promote it to the golden directory manually.
 
 ### Use in a unit test (Swift Testing)
 
 ```swift
-import CoreGraphics
 import GoldenImage
 import Testing
 
-@Suite struct MyRendererTests {
-    /// Resolve a `Tests/<Suite>/Goldens/` directory next to this file.
-    private var goldensDirectory: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("Goldens")
-    }
-
-    @Test
-    func renderedShape_matchesGolden() throws {
-        let rendered: CGImage = MyRenderer().render(.circle, size: CGSize(width: 256, height: 256))
-
-        let golden = GoldenImageComparison(
-            imageDirectory: goldensDirectory,
-            options: .ignoreEdgeAAHalos  // tolerate 1px AA differences along edges
-        )
-
-        do {
-            #expect(try golden.image(image: rendered, matchesGoldenImageNamed: "circle"))
-        } catch let GoldenImageError.noGoldenImage(savedTo) {
-            // First run: no golden exists yet. The rendered image was written to
-            // savedTo so you can inspect it and copy it into goldensDirectory to
-            // promote it as the new reference.
-            Issue.record("No golden image; review and promote: \(savedTo?.path ?? "<temp>")")
-        }
-    }
-
-    /// Lower-level: assert directly on PSNR / erodedPSNR if you don't need the
-    /// golden-image directory machinery.
-    @Test
-    func twoRenderers_agreeIgnoringAAEdges() throws {
-        let canvas: CGImage = SwiftUIRenderer().render(...)
-        let metal: CGImage  = MetalRenderer().render(...)
-
-        let result = try ImageComparison().compare(canvas, metal)
-
-        // Edge AA differences are expected; require the eroded score to match.
-        #expect(result.isMatchIgnoringEdges,
-                "PSNR: \(result.psnr) dB, eroded: \(result.erodedPSNR ?? .nan) dB")
-    }
+@Test
+func renderedShape_matchesGolden() throws {
+    let rendered = MyRenderer().render(...)
+    let golden = GoldenImageComparison(imageDirectory: goldensDirectory)
+    #expect(try golden.image(image: rendered, matchesGoldenImageNamed: "circle"))
 }
 ```
 
-First run produces a `noGoldenImage` failure with the rendered output saved
-to a temp location; copy it into `goldensDirectory` to lock in the reference.
+On the first run there's no golden yet, so the call throws
+`GoldenImageError.noGoldenImage(savedTo:)` and writes the rendered image to
+`savedTo`. Inspect it, copy it into `goldensDirectory`, and the next run
+compares against it.
 Subsequent runs compare against the saved golden.
 
 ## CLI
 
-```bash
-golden-image-compare <image1> <image2> [options]
-```
-
-Options:
-
-| Flag | Description |
-|---|---|
-| `-m, --match-mode <psnr\|eroded>` | Which PSNR variant decides the match. Default `psnr`. |
-| `--threshold <dB>` | PSNR threshold for declaring a match. Default `120`. |
-| `-p, --preview` | (macOS) Opens a SwiftUI window showing image A, image B, and the difference image, with a toggle to swap between the regular and eroded difference. |
-
-Exits non-zero on NO MATCH.
-
-Example:
-
-```
-$ golden-image-compare edge_aa_a.png edge_aa_b.png
-PSNR: 38.21
-Eroded PSNR: 120.00 dB (edge-aware: ignoring 1px AA halos)
-NO MATCH (threshold 120.0 dB, mode psnr)
-
-$ golden-image-compare -m eroded edge_aa_a.png edge_aa_b.png
-PSNR: 38.21
-Eroded PSNR: 120.00 dB (edge-aware: ignoring 1px AA halos)
-MATCH (threshold 120.0 dB, mode eroded)
-```
+A `golden-image-compare` executable is included for ad-hoc PSNR comparisons
+from the command line, including a macOS preview window. Run with `--help`
+for flags and usage.
 
 ## Feature matrix
 
@@ -185,14 +153,6 @@ MATCH (threshold 120.0 dB, mode eroded)
 
 The `MTLTexture` overload is an opt-in fast path for Metal-native callers.
 All other overloads go through the fully-featured CPU implementation.
-
-## PSNR interpretation
-
-- `≥ 120 dB` — identical or nearly identical
-- `> 40 dB` — excellent (differences barely noticeable)
-- `30–40 dB` — good (minor differences)
-- `20–30 dB` — fair (differences visible)
-- `< 20 dB` — poor (significant differences)
 
 ## Platforms
 
