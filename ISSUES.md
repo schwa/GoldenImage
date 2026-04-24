@@ -74,3 +74,16 @@ Or provide an option on `compare` to select the mode.
 - Context: discovered while tuning the VectorDemo app in the Vector project, which displays A / B / Diff / PSNR per shape.
 
 ---
+
+## 4: Generate diff image between two images
+
++++
+status: new
+priority: medium
+kind: feature
+created: 2026-04-24T19:56:07Z
++++
+
+Add a way to generate a visualization image showing the diff between two images.
+
+---
