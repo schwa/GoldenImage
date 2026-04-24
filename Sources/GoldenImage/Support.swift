@@ -100,5 +100,4 @@ extension CGImage {
             throw NSError(domain: "GoldenImage", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to write image to \(url.path)"])
         }
     }
-
 }
