@@ -75,6 +75,14 @@ public extension ImageComparison {
         let cpuCompare = CPUCompare()
         return try cpuCompare.differenceImage(lhs, rhs)
     }
+
+    /// Create a grayscale difference image between two images with a 3×3 morphological
+    /// erosion applied, so single-pixel differences (e.g. AA halos along shape edges)
+    /// are suppressed. Companion to `erodedPSNR`.
+    func erodedDifferenceImage(_ lhs: CGImage, _ rhs: CGImage) throws -> CGImage {
+        let cpuCompare = CPUCompare()
+        return try cpuCompare.differenceImage(lhs, rhs, eroded: true)
+    }
 }
 
 public extension ImageComparison {

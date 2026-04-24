@@ -30,6 +30,9 @@ internal struct GoldenImageCLI: ParsableCommand {
     @Option(name: .long, help: "PSNR threshold (in dB) for declaring a match. Defaults to 120 (identical or nearly identical).")
     var threshold: Double = 120.0
 
+    @Flag(name: [.long, .customShort("p")], help: "Open a window showing image A, image B, and the difference image. macOS only.")
+    var preview: Bool = false
+
     func run() throws {
         guard let cgImage1 = loadImage(at: image1) else {
             throw ValidationError("Failed to load image at: \(image1)")
@@ -70,6 +73,25 @@ internal struct GoldenImageCLI: ParsableCommand {
             print("MATCH (threshold \(threshold) dB, mode \(matchMode.rawValue))")
         } else {
             print("NO MATCH (threshold \(threshold) dB, mode \(matchMode.rawValue))")
+        }
+
+        if preview {
+            #if os(macOS)
+            try MainActor.assumeIsolated {
+                try PreviewWindow.show(
+                    imageA: cgImage1,
+                    imageB: cgImage2,
+                    result: result,
+                    titleA: URL(fileURLWithPath: image1).lastPathComponent,
+                    titleB: URL(fileURLWithPath: image2).lastPathComponent
+                )
+            }
+            #else
+            print("--preview is only supported on macOS")
+            #endif
+        }
+
+        if !matched {
             throw ExitCode.failure
         }
     }

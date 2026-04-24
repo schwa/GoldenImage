@@ -80,10 +80,12 @@ Or provide an option on `compare` to select the mode.
 ## 4: Generate diff image between two images
 
 +++
-status: new
+status: closed
 priority: medium
 kind: feature
 created: 2026-04-24T19:56:07Z
+updated: 2026-04-24T20:13:21Z
+closed: 2026-04-24T20:13:21Z
 +++
 
 Add a way to generate a visualization image showing the diff between two images.

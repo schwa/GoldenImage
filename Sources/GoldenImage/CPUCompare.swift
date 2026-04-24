@@ -7,9 +7,11 @@ internal struct CPUCompare: Sendable {
     /// - Parameters:
     ///   - lhs: First image to compare
     ///   - rhs: Second image to compare
+    ///   - eroded: If true, apply a 3×3 morphological erosion to the difference map so
+    ///     single-pixel differences (such as AA halos along edges) are suppressed.
     /// - Returns: A grayscale CGImage showing per-pixel differences
     /// - Throws: TextureComparisonError if images have mismatched dimensions or color spaces
-    func differenceImage(_ lhs: CGImage, _ rhs: CGImage) throws -> CGImage {
+    func differenceImage(_ lhs: CGImage, _ rhs: CGImage, eroded: Bool = false) throws -> CGImage {
         guard lhs.width == rhs.width, lhs.height == rhs.height else {
             throw TextureComparisonError.dimensionMismatch
         }
@@ -93,6 +95,36 @@ internal struct CPUCompare: Sendable {
             let normalizedDiff = distance / maxDistance
 
             grayscalePixels[i] = UInt8(normalizedDiff * 255.0)
+        }
+
+        if eroded {
+            // 3×3 morphological erosion: zero out any pixel that has a zero-intensity neighbor.
+            // Border pixels are treated as having an implicit zero neighbor (conservative).
+            let source = grayscalePixels
+            for y in 0..<height {
+                for x in 0..<width {
+                    let idx = y * width + x
+                    if source[idx] == 0 {
+                        continue
+                    }
+                    if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                        grayscalePixels[idx] = 0
+                        continue
+                    }
+                    var anyZero = false
+                    neighborLoop: for dy in -1...1 {
+                        for dx in -1...1 where dx != 0 || dy != 0 {
+                            if source[(y + dy) * width + (x + dx)] == 0 {
+                                anyZero = true
+                                break neighborLoop
+                            }
+                        }
+                    }
+                    if anyZero {
+                        grayscalePixels[idx] = 0
+                    }
+                }
+            }
         }
 
         // Create grayscale CGImage
