@@ -30,6 +30,9 @@ internal struct GoldenImageCLI: ParsableCommand {
     @Option(name: .long, help: "PSNR threshold (in dB) for declaring a match. Defaults to 120 (identical or nearly identical).")
     var threshold: Double = 120.0
 
+    @Option(name: .long, help: "Erosion kernel radius in pixels for edge-aware (eroded) comparison. 1 = 3×3 (suppresses 1px halos, default), 2 = 5×5 (suppresses 2px halos), etc.")
+    var erosionRadius: Int = 1
+
     @Flag(name: [.long, .customShort("p")], help: "Open a window showing image A, image B, and the difference image. macOS only.")
     var preview: Bool = false
 
@@ -42,7 +45,12 @@ internal struct GoldenImageCLI: ParsableCommand {
             throw ValidationError("Failed to load image at: \(image2)")
         }
 
-        let result = try ImageComparison().compare(cgImage1, cgImage2)
+        guard erosionRadius >= 1 else {
+            throw ValidationError("--erosion-radius must be >= 1")
+        }
+
+        let comparison = ImageComparison(erosionRadius: erosionRadius)
+        let result = try comparison.compare(cgImage1, cgImage2)
 
         if result.psnr >= 120.0 {
             print("PSNR: 120.00 dB (images are identical or nearly identical)")
@@ -51,10 +59,12 @@ internal struct GoldenImageCLI: ParsableCommand {
         }
 
         if let erodedPSNR = result.erodedPSNR {
+            let kernel = 2 * erosionRadius + 1
+            let suffix = "(edge-aware: \(kernel)×\(kernel) erosion, suppressing up to \(erosionRadius)px halos)"
             if erodedPSNR >= 120.0 {
-                print("Eroded PSNR: 120.00 dB (edge-aware: ignoring 1px AA halos)")
+                print("Eroded PSNR: 120.00 dB \(suffix)")
             } else {
-                print("Eroded PSNR: \(erodedPSNR) (edge-aware: ignoring 1px AA halos)")
+                print("Eroded PSNR: \(erodedPSNR) \(suffix)")
             }
         }
 
@@ -83,7 +93,8 @@ internal struct GoldenImageCLI: ParsableCommand {
                     imageB: cgImage2,
                     result: result,
                     titleA: URL(fileURLWithPath: image1).lastPathComponent,
-                    titleB: URL(fileURLWithPath: image2).lastPathComponent
+                    titleB: URL(fileURLWithPath: image2).lastPathComponent,
+                    erosionRadius: erosionRadius
                 )
             }
             #else

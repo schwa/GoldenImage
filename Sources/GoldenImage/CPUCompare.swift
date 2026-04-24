@@ -2,13 +2,18 @@ import CoreGraphics
 import Foundation
 
 internal struct CPUCompare: Sendable {
+    /// Radius (in pixels) of the morphological erosion kernel. Kernel size is
+    /// `(2 * erosionRadius + 1)` square. Defaults to 1 (3×3 kernel).
+    var erosionRadius: Int = 1
+
     /// Create a grayscale difference image between two CGImages.
     /// Each pixel's intensity represents the normalized difference (0 = identical, 1 = max difference).
     /// - Parameters:
     ///   - lhs: First image to compare
     ///   - rhs: Second image to compare
-    ///   - eroded: If true, apply a 3×3 morphological erosion to the difference map so
-    ///     single-pixel differences (such as AA halos along edges) are suppressed.
+    ///   - eroded: If true, apply a `(2r+1)×(2r+1)` morphological erosion to the difference
+    ///     map (where `r` is `erosionRadius`) so thin differences (such as AA halos along
+    ///     edges) are suppressed.
     /// - Returns: A grayscale CGImage showing per-pixel differences
     /// - Throws: TextureComparisonError if images have mismatched dimensions or color spaces
     func differenceImage(_ lhs: CGImage, _ rhs: CGImage, eroded: Bool = false) throws -> CGImage {
@@ -98,8 +103,10 @@ internal struct CPUCompare: Sendable {
         }
 
         if eroded {
-            // 3×3 morphological erosion: zero out any pixel that has a zero-intensity neighbor.
-            // Border pixels are treated as having an implicit zero neighbor (conservative).
+            // (2r+1)×(2r+1) morphological erosion: zero out any pixel that has a
+            // zero-intensity neighbor within the kernel. Border pixels are treated as
+            // having an implicit zero neighbor (conservative).
+            let r = erosionRadius
             let source = grayscalePixels
             for y in 0..<height {
                 for x in 0..<width {
@@ -107,13 +114,13 @@ internal struct CPUCompare: Sendable {
                     if source[idx] == 0 {
                         continue
                     }
-                    if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                    if x < r || y < r || x >= width - r || y >= height - r {
                         grayscalePixels[idx] = 0
                         continue
                     }
                     var anyZero = false
-                    neighborLoop: for dy in -1...1 {
-                        for dx in -1...1 where dx != 0 || dy != 0 {
+                    neighborLoop: for dy in -r...r {
+                        for dx in -r...r where dx != 0 || dy != 0 {
                             if source[(y + dy) * width + (x + dx)] == 0 {
                                 anyZero = true
                                 break neighborLoop
@@ -258,7 +265,7 @@ internal struct CPUCompare: Sendable {
             sumSquaredDiff += sq
         }
 
-        let erodedSum = Self.erodeErrorMap(errorMap, width: width, height: height)
+        let erodedSum = Self.erodeErrorMap(errorMap, width: width, height: height, radius: erosionRadius)
 
         let divisor = Double(pixelCount * 4)
         let mse = sumSquaredDiff / divisor
@@ -269,19 +276,20 @@ internal struct CPUCompare: Sendable {
         return DetailedResult(psnr: psnr, erodedPSNR: erodedPSNR)
     }
 
-    /// Sum of error-map values that survive 3×3 morphological erosion
-    /// (shared by SDR and HDR paths).
-    private static func erodeErrorMap(_ errorMap: [Double], width: Int, height: Int) -> Double {
+    /// Sum of error-map values that survive `(2r+1)×(2r+1)` morphological erosion
+    /// (shared by SDR and HDR paths). Border pixels within `r` of the edge are
+    /// treated as having an implicit zero neighbor (conservative).
+    private static func erodeErrorMap(_ errorMap: [Double], width: Int, height: Int, radius r: Int) -> Double {
         var erodedSum: Double = 0.0
         for y in 0..<height {
             for x in 0..<width {
                 let idx = y * width + x
                 let value = errorMap[idx]
                 if value == 0 { continue }
-                if x == 0 || y == 0 || x == width - 1 || y == height - 1 { continue }
+                if x < r || y < r || x >= width - r || y >= height - r { continue }
                 var anyZero = false
-                neighborLoop: for dy in -1...1 {
-                    for dx in -1...1 where dx != 0 || dy != 0 {
+                neighborLoop: for dy in -r...r {
+                    for dx in -r...r where dx != 0 || dy != 0 {
                         if errorMap[(y + dy) * width + (x + dx)] == 0 {
                             anyZero = true
                             break neighborLoop
@@ -369,7 +377,7 @@ internal struct CPUCompare: Sendable {
             sumSquaredDiff += sq
         }
 
-        let erodedSum = Self.erodeErrorMap(errorMap, width: width, height: height)
+        let erodedSum = Self.erodeErrorMap(errorMap, width: width, height: height, radius: erosionRadius)
 
         let divisor = Double(pixelCount * 4)
         let mse = sumSquaredDiff / divisor

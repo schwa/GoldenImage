@@ -5,8 +5,21 @@ import Metal
 import SwiftUI
 
 public struct ImageComparison: Sendable {
-    public init() {
-        // No-op.
+    /// Radius (in pixels) of the morphological erosion kernel used for the
+    /// edge-aware (`erodedPSNR`) and `erodedDifferenceImage` paths. The kernel
+    /// is a `(2r+1) × (2r+1)` square minimum filter.
+    ///
+    /// - `1` (default): 3×3 kernel — suppresses 1px AA halos.
+    /// - `2`: 5×5 kernel — suppresses 2px-wide differences (more aggressive;
+    ///   will also erase 2pt strokes and other thin features).
+    ///
+    /// Larger values increase coverage of edge artifacts but also discard more
+    /// genuine thin features. See `Result.erodedPSNR` for the trade-offs.
+    public var erosionRadius: Int
+
+    public init(erosionRadius: Int = 1) {
+        precondition(erosionRadius >= 1, "erosionRadius must be >= 1")
+        self.erosionRadius = erosionRadius
     }
 
     public struct Result: Hashable, Sendable {
@@ -15,16 +28,19 @@ public struct ImageComparison: Sendable {
         /// Edge-aware PSNR that ignores thin (single-pixel) differences such as
         /// anti-aliasing halos along shape edges.
         ///
-        /// Computed by applying a 3×3 morphological erosion (minimum filter) to the
-        /// per-pixel squared-error map before averaging: any error pixel that has a
-        /// zero-error neighbor is zeroed out. Solid regions of error survive.
+        /// Computed by applying a `(2r+1)×(2r+1)` morphological erosion (minimum filter)
+        /// to the per-pixel squared-error map before averaging — where `r` is
+        /// `ImageComparison.erosionRadius` (default 1). Any error pixel with a
+        /// zero-error neighbor inside the kernel is zeroed out. Solid regions of
+        /// error survive.
         ///
         /// `nil` when the underlying comparison path does not support it
         /// (currently the `MTLTexture` overload).
         ///
-        /// **Caveat:** the 3×3 erosion kernel cannot distinguish a genuine
-        /// single-pixel-wide feature (e.g. a 1pt stroke, a hairline, an isolated
-        /// pixel-art detail) from an anti-aliasing halo — both will be erased.
+        /// **Caveat:** the erosion kernel cannot distinguish a genuine thin feature
+        /// (e.g. a 1pt stroke, a hairline, an isolated pixel-art detail) from an
+        /// anti-aliasing halo — both will be erased. Increasing the radius widens
+        /// the kernel and erases correspondingly thicker features.
         /// Empirically, strokes ≥3pt are preserved within ~3 dB of `psnr`, 2pt
         /// strokes inflate by ~5 dB, and 1pt strokes can vanish entirely (jumping
         /// to 120 dB). Treat `psnr` as the primary signal and `erodedPSNR` as a
@@ -58,8 +74,14 @@ public struct ImageComparison: Sendable {
 }
 
 public extension ImageComparison {
-    func compare(_ lhs: CGImage, _ rhs: CGImage) throws -> Result {
-        let cpuCompare = CPUCompare()
+    /// Compare two images and return both standard and edge-aware PSNR.
+    /// - Parameters:
+    ///   - lhs: First image to compare.
+    ///   - rhs: Second image to compare.
+    ///   - erosionRadius: Per-call override for the erosion kernel radius used to
+    ///     compute `Result.erodedPSNR`. When `nil` (default), uses `self.erosionRadius`.
+    func compare(_ lhs: CGImage, _ rhs: CGImage, erosionRadius: Int? = nil) throws -> Result {
+        let cpuCompare = CPUCompare(erosionRadius: erosionRadius ?? self.erosionRadius)
         let detailed = try cpuCompare.compareDetailed(lhs, rhs)
         return Result(psnr: detailed.psnr, erodedPSNR: detailed.erodedPSNR)
     }
@@ -72,22 +94,28 @@ public extension ImageComparison {
     ///   - rhs: Second image to compare
     /// - Returns: A grayscale CGImage showing per-pixel differences
     func differenceImage(_ lhs: CGImage, _ rhs: CGImage) throws -> CGImage {
-        let cpuCompare = CPUCompare()
+        let cpuCompare = CPUCompare(erosionRadius: erosionRadius)
         return try cpuCompare.differenceImage(lhs, rhs)
     }
 
-    /// Create a grayscale difference image between two images with a 3×3 morphological
-    /// erosion applied, so single-pixel differences (e.g. AA halos along shape edges)
-    /// are suppressed. Companion to `erodedPSNR`.
-    func erodedDifferenceImage(_ lhs: CGImage, _ rhs: CGImage) throws -> CGImage {
-        let cpuCompare = CPUCompare()
+    /// Create a grayscale difference image between two images with a morphological
+    /// erosion applied, so thin differences (e.g. AA halos along shape edges) are
+    /// suppressed. The erosion kernel size is `(2r+1)` square.
+    /// Companion to `erodedPSNR`.
+    /// - Parameters:
+    ///   - lhs: First image to compare.
+    ///   - rhs: Second image to compare.
+    ///   - erosionRadius: Per-call override for the erosion kernel radius. When
+    ///     `nil` (default), uses `self.erosionRadius`.
+    func erodedDifferenceImage(_ lhs: CGImage, _ rhs: CGImage, erosionRadius: Int? = nil) throws -> CGImage {
+        let cpuCompare = CPUCompare(erosionRadius: erosionRadius ?? self.erosionRadius)
         return try cpuCompare.differenceImage(lhs, rhs, eroded: true)
     }
 }
 
 public extension ImageComparison {
     @MainActor
-    func compare(_ lhs: Image, _ rhs: Image) throws -> Result {
+    func compare(_ lhs: Image, _ rhs: Image, erosionRadius: Int? = nil) throws -> Result {
         let renderer1 = ImageRenderer(content: lhs)
         let renderer2 = ImageRenderer(content: rhs)
 
@@ -99,7 +127,7 @@ public extension ImageComparison {
             throw TextureComparisonError.failedToCreateTexture
         }
 
-        return try compare(lhsImage, rhsImage)
+        return try compare(lhsImage, rhsImage, erosionRadius: erosionRadius)
     }
 }
 
@@ -112,8 +140,8 @@ private func loadImage(at url: URL) throws -> CGImage {
 }
 
 public extension ImageComparison {
-    func compare(_ lhs: URL, _ rhs: URL) throws -> Result {
-        try compare(loadImage(at: lhs), loadImage(at: rhs))
+    func compare(_ lhs: URL, _ rhs: URL, erosionRadius: Int? = nil) throws -> Result {
+        try compare(loadImage(at: lhs), loadImage(at: rhs), erosionRadius: erosionRadius)
     }
 
     /// Create a grayscale difference image between two images at the given URLs.
@@ -123,7 +151,7 @@ public extension ImageComparison {
 }
 
 public extension ImageComparison {
-    func compare(_ lhs: CIImage, _ rhs: CIImage) throws -> Result {
+    func compare(_ lhs: CIImage, _ rhs: CIImage, erosionRadius: Int? = nil) throws -> Result {
         let context = CIContext()
 
         guard let lhsImage = context.createCGImage(lhs, from: lhs.extent) else {
@@ -134,7 +162,7 @@ public extension ImageComparison {
             throw TextureComparisonError.failedToCreateTexture
         }
 
-        return try compare(lhsImage, rhsImage)
+        return try compare(lhsImage, rhsImage, erosionRadius: erosionRadius)
     }
 
     /// Create a grayscale difference image between two CIImages.

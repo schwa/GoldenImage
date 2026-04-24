@@ -8,8 +8,8 @@ import SwiftUI
 /// Blocks until the window is closed.
 @MainActor
 internal enum PreviewWindow {
-    static func show(imageA: CGImage, imageB: CGImage, result: ImageComparison.Result, titleA: String, titleB: String) throws {
-        let comparison = ImageComparison()
+    static func show(imageA: CGImage, imageB: CGImage, result: ImageComparison.Result, titleA: String, titleB: String, erosionRadius: Int = 1) throws {
+        let comparison = ImageComparison(erosionRadius: erosionRadius)
         let diff = try comparison.differenceImage(imageA, imageB)
         let erodedDiff = try comparison.erodedDifferenceImage(imageA, imageB)
 
