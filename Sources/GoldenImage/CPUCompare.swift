@@ -161,13 +161,140 @@ internal struct CPUCompare: Sendable {
         var erodedPSNR: Double
     }
 
+    /// Returns true if the image has float components or a high-bit-depth representation
+    /// that warrants an HDR comparison path.
+    static func isHDR(_ image: CGImage) -> Bool {
+        let bitmapInfo = image.bitmapInfo
+        if bitmapInfo.contains(.floatComponents) {
+            return true
+        }
+        if image.bitsPerComponent > 8 {
+            return true
+        }
+        // Extended-range color spaces imply HDR-capable content even at 8-bit.
+        if let cs = image.colorSpace, cs.name.map({ ($0 as String).contains("extended") }) == true {
+            return true
+        }
+        return false
+    }
+
     /// Compare two CGImages on the CPU and return both standard and edge-aware PSNR.
     ///
     /// The edge-aware variant applies a 3×3 morphological erosion (minimum filter) to the
     /// per-pixel squared-error map before averaging — any pixel with a zero-error neighbor is
     /// treated as zero. This suppresses single-pixel anti-aliasing halos along shape edges
     /// while preserving solid regions of error.
+    ///
+    /// Dispatches to an HDR (32-bit float, linear, peak=1.0) path when either input has
+    /// float components, >8bpc, or an extended-range color space. Otherwise uses the
+    /// standard 8-bit linearSRGB path (peak=255).
     func compareDetailed(_ lhs: CGImage, _ rhs: CGImage) throws -> DetailedResult {
+        if Self.isHDR(lhs) || Self.isHDR(rhs) {
+            return try compareDetailedHDR(lhs, rhs)
+        }
+        return try compareDetailedSDR(lhs, rhs)
+    }
+
+    /// HDR comparison path: draws both images into a 32-bit float extended-linear-sRGB
+    /// context and computes PSNR with peak=1.0.
+    private func compareDetailedHDR(_ lhs: CGImage, _ rhs: CGImage) throws -> DetailedResult {
+        guard lhs.width == rhs.width, lhs.height == rhs.height else {
+            throw TextureComparisonError.dimensionMismatch
+        }
+
+        let width = lhs.width
+        let height = lhs.height
+        let pixelCount = width * height
+        let bytesPerPixel = 16 // RGBA, 4×Float32
+        let bytesPerRow = width * bytesPerPixel
+        let floatCount = pixelCount * 4
+
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB) else {
+            throw TextureComparisonError.failedToCreateTexture
+        }
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.rawValue
+            | CGBitmapInfo.floatComponents.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+
+        var pixelsA = [Float](repeating: 0, count: floatCount)
+        var pixelsB = [Float](repeating: 0, count: floatCount)
+
+        guard let contextA = CGContext(
+            data: &pixelsA,
+            width: width,
+            height: height,
+            bitsPerComponent: 32,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            throw TextureComparisonError.failedToCreateTexture
+        }
+        guard let contextB = CGContext(
+            data: &pixelsB,
+            width: width,
+            height: height,
+            bitsPerComponent: 32,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            throw TextureComparisonError.failedToCreateTexture
+        }
+
+        contextA.draw(lhs, in: CGRect(x: 0, y: 0, width: width, height: height))
+        contextB.draw(rhs, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var errorMap = [Double](repeating: 0, count: pixelCount)
+        var sumSquaredDiff: Double = 0.0
+        for i in 0..<pixelCount {
+            let p = i * 4
+            let dR = Double(pixelsA[p]) - Double(pixelsB[p])
+            let dG = Double(pixelsA[p + 1]) - Double(pixelsB[p + 1])
+            let dB = Double(pixelsA[p + 2]) - Double(pixelsB[p + 2])
+            let dA = Double(pixelsA[p + 3]) - Double(pixelsB[p + 3])
+            let sq = dR * dR + dG * dG + dB * dB + dA * dA
+            errorMap[i] = sq
+            sumSquaredDiff += sq
+        }
+
+        let erodedSum = Self.erodeErrorMap(errorMap, width: width, height: height)
+
+        let divisor = Double(pixelCount * 4)
+        let mse = sumSquaredDiff / divisor
+        let erodedMSE = erodedSum / divisor
+        let peak = 1.0
+        let psnr = mse == 0 ? 120.0 : min(20.0 * log10(peak / sqrt(mse)), 120.0)
+        let erodedPSNR = erodedMSE == 0 ? 120.0 : min(20.0 * log10(peak / sqrt(erodedMSE)), 120.0)
+        return DetailedResult(psnr: psnr, erodedPSNR: erodedPSNR)
+    }
+
+    /// Sum of error-map values that survive 3×3 morphological erosion
+    /// (shared by SDR and HDR paths).
+    private static func erodeErrorMap(_ errorMap: [Double], width: Int, height: Int) -> Double {
+        var erodedSum: Double = 0.0
+        for y in 0..<height {
+            for x in 0..<width {
+                let idx = y * width + x
+                let value = errorMap[idx]
+                if value == 0 { continue }
+                if x == 0 || y == 0 || x == width - 1 || y == height - 1 { continue }
+                var anyZero = false
+                neighborLoop: for dy in -1...1 {
+                    for dx in -1...1 where dx != 0 || dy != 0 {
+                        if errorMap[(y + dy) * width + (x + dx)] == 0 {
+                            anyZero = true
+                            break neighborLoop
+                        }
+                    }
+                }
+                if !anyZero { erodedSum += value }
+            }
+        }
+        return erodedSum
+    }
+
+    private func compareDetailedSDR(_ lhs: CGImage, _ rhs: CGImage) throws -> DetailedResult {
         guard lhs.width == rhs.width, lhs.height == rhs.height else {
             throw TextureComparisonError.dimensionMismatch
         }
@@ -180,6 +307,7 @@ internal struct CPUCompare: Sendable {
         guard lhsColorSpace == rhsColorSpace else {
             throw TextureComparisonError.colorSpaceMismatch(lhs: lhsColorSpace, rhs: rhsColorSpace)
         }
+        // (remainder of body unchanged; HDR dispatch happens in compareDetailed)
 
         let width = lhs.width
         let height = lhs.height
@@ -241,35 +369,7 @@ internal struct CPUCompare: Sendable {
             sumSquaredDiff += sq
         }
 
-        // 3×3 morphological erosion: zero out any pixel that has a zero-error neighbor.
-        // Image-border pixels are treated as having an implicit zero-error neighbor outside
-        // the image (conservative: errors at the edge are ignored).
-        var erodedSum: Double = 0.0
-        for y in 0..<height {
-            for x in 0..<width {
-                let idx = y * width + x
-                let value = errorMap[idx]
-                if value == 0 {
-                    continue
-                }
-                // Border pixels: at least one neighbor is outside → treat as zero.
-                if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
-                    continue
-                }
-                var anyZero = false
-                neighborLoop: for dy in -1...1 {
-                    for dx in -1...1 where dx != 0 || dy != 0 {
-                        if errorMap[(y + dy) * width + (x + dx)] == 0 {
-                            anyZero = true
-                            break neighborLoop
-                        }
-                    }
-                }
-                if !anyZero {
-                    erodedSum += value
-                }
-            }
-        }
+        let erodedSum = Self.erodeErrorMap(errorMap, width: width, height: height)
 
         let divisor = Double(pixelCount * 4)
         let mse = sumSquaredDiff / divisor

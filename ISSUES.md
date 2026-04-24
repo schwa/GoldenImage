@@ -5,10 +5,12 @@
 ## 1: HDR comparison
 
 +++
-status: new
+status: closed
 priority: medium
 kind: none
 created: 2025-11-18T00:00:00Z
+updated: 2026-04-24T20:20:34Z
+closed: 2026-04-24T20:20:34Z
 +++
 
 ---
