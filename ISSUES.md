@@ -95,3 +95,28 @@ closed: 2026-04-24T20:13:21Z
 Add a way to generate a visualization image showing the diff between two images.
 
 ---
+
+## 5: GPU (MTLTexture) path feature parity with CPU
+
++++
+status: new
+priority: medium
+kind: enhancement
+created: 2026-04-24T20:24:31Z
++++
+
+The GPU comparison path (via TextureCompare, used by the MTLTexture overload of ImageComparison.compare) only implements a subset of what the CPU path provides. Clients using the default CGImage/URL/CIImage/Image overloads are unaffected (those all route to CPU), but callers passing MTLTexture directly get weaker functionality.
+
+Gaps to close:
+
+1. **Eroded PSNR.** CPU path returns result.erodedPSNR; GPU path leaves it nil. Either port the 3x3 erosion to a Metal kernel operating on the per-pixel squared-error buffer, or read the buffer back and erode on the CPU.
+
+2. **HDR / float textures.** The Metal shader (calculateSquaredDifferences) is hardcoded for 8-bit texture sampling and uses peak=255 in the PSNR formula. For rgba16Float / rgba32Float textures it should use peak=1.0. Needs either a separate HDR kernel or a generic one with a peak uniform.
+
+3. **Difference image generation.** CPU has differenceImage(_:_:) and erodedDifferenceImage(_:_:); no MTLTexture equivalent exists.
+
+4. **Color-space mismatch validation.** CPUCompare.compareDetailed throws colorSpaceMismatch when the two inputs disagree; the MTLTexture path only checks dimensions. MTLTextures don't carry CGColorSpace directly but we could at least check pixelFormat equivalence and document the expectation.
+
+Current test coverage asserts CPU == GPU within 1 dB for standard PSNR on SDR images, which is the only overlap. Closing any of these would let us extend that oracle check further.
+
+---
