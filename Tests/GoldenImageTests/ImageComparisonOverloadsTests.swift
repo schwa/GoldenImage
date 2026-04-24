@@ -169,6 +169,85 @@ internal struct ImageComparisonOverloadsTests {
         }
     }
 
+    // MARK: - Eroded difference image
+
+    @Test
+    func erodedDifferenceImage_identicalReturnsBlack() throws {
+        let image = try loadResourceImage(named: "alpha_blend")
+        let diff = try ImageComparison().erodedDifferenceImage(image, image)
+        #expect(diff.width == image.width)
+        #expect(diff.height == image.height)
+    }
+
+    @Test
+    func erodedDifferenceImage_suppressesAAHalos() throws {
+        // The edge_aa fixtures differ only in 1px AA halos; the eroded difference
+        // image should therefore be almost entirely black while the regular
+        // difference image has visible non-zero pixels.
+        let a = try loadResourceImage(named: "edge_aa_a")
+        let b = try loadResourceImage(named: "edge_aa_b")
+
+        let diff = try ImageComparison().differenceImage(a, b)
+        let erodedDiff = try ImageComparison().erodedDifferenceImage(a, b)
+
+        // Both outputs should have the same dimensions as the inputs.
+        #expect(erodedDiff.width == a.width)
+        #expect(erodedDiff.height == a.height)
+
+        // Count non-zero pixels in each via a single-channel 8-bit readback.
+        func nonZeroPixelCount(_ image: CGImage) throws -> Int {
+            guard let gray = CGColorSpace(name: CGColorSpace.linearGray) else {
+                throw TestError.failedToLoadImage("gray colorspace")
+            }
+            let width = image.width
+            let height = image.height
+            var pixels = [UInt8](repeating: 0, count: width * height)
+            guard let ctx = CGContext(
+                data: &pixels,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width,
+                space: gray,
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else {
+                throw TestError.failedToLoadImage("gray ctx")
+            }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return pixels.reduce(0) { $0 + ($1 > 0 ? 1 : 0) }
+        }
+
+        let diffNonZero = try nonZeroPixelCount(diff)
+        let erodedNonZero = try nonZeroPixelCount(erodedDiff)
+
+        print("eroded diff coverage: raw=\(diffNonZero) eroded=\(erodedNonZero)")
+
+        #expect(diffNonZero > 0, "raw difference image should have non-zero pixels for edge_aa fixtures")
+        // Erosion should remove the vast majority of the halo pixels.
+        #expect(erodedNonZero < diffNonZero / 4, "erosion should remove at least 75% of halo pixels")
+    }
+
+    // MARK: - Result flags
+
+    @Test
+    func result_isMatchIgnoringEdges_true_whenErodedAbove120() {
+        let r = ImageComparison.Result(psnr: 38.0, erodedPSNR: 120.0)
+        #expect(r.isMatch == false)
+        #expect(r.isMatchIgnoringEdges == true)
+    }
+
+    @Test
+    func result_isMatchIgnoringEdges_false_whenErodedMissing() {
+        let r = ImageComparison.Result(psnr: 38.0, erodedPSNR: nil)
+        #expect(r.isMatchIgnoringEdges == false)
+    }
+
+    @Test
+    func result_isMatchIgnoringEdges_false_whenErodedBelow120() {
+        let r = ImageComparison.Result(psnr: 15.0, erodedPSNR: 18.0)
+        #expect(r.isMatchIgnoringEdges == false)
+    }
+
     // MARK: - HDR / float path
 
     /// Build a 32-bit float extended-linear-sRGB CGImage filled with the given RGBA color.
