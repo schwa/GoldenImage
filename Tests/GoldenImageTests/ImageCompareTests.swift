@@ -644,6 +644,260 @@ internal struct ImageCompareTests {
 
     // MARK: - Real-World Image Tests
 
+    // MARK: - Edge-aware PSNR
+
+    @Test
+    func testErodedPSNR_identicalImages() throws {
+        let image = try loadResourceImage(named: "alpha_blend")
+        let result = try ImageComparison().compare(image, image)
+        #expect(result.psnr >= 120.0)
+        #expect(result.erodedPSNR ?? 0 >= 120.0)
+    }
+
+    @Test
+    func testErodedPSNR_doesNotHideObviousDifferences() async throws {
+        // For genuine, non-edge differences the eroded PSNR should stay low
+        // — erosion must not paper over solid regions of mismatch.
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "eroded_diff_a") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "eroded_diff_b") {
+                Canvas { context, size in
+                    let rect = CGRect(origin: .zero, size: size)
+                    context.fill(Path(rect), with: .color(.red))
+                    let circlePath = Path(ellipseIn: CGRect(x: rect.midX - 50, y: rect.midY - 50, width: 100, height: 100))
+                    context.fill(circlePath, with: .color(.yellow))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "eroded_diff_a")
+        let imageB = try loadImage(named: "eroded_diff_b")
+
+        let result = try ImageComparison().compare(imageA, imageB)
+        guard let erodedPSNR = result.erodedPSNR else {
+            Issue.record("erodedPSNR should be populated for CGImage comparisons")
+            return
+        }
+
+        print("eroded_diff (obvious) - PSNR: \(result.psnr) dB, eroded: \(erodedPSNR) dB")
+
+        // Obvious difference: both should remain low. Guard against false positives.
+        #expect(result.psnr < 10.0)
+        #expect(erodedPSNR < 15.0)
+    }
+
+    @Test
+    func testErodedPSNR_checkerboardStaysLow() async throws {
+        // Checkerboard: every error pixel has error neighbors (no zero-error neighbors),
+        // so erosion should barely change the score.
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "eroded_checker_a") {
+                Canvas { context, size in
+                    let tileSize = size.width / 8
+                    for row in 0..<8 {
+                        for col in 0..<8 {
+                            let color = (row + col).isMultiple(of: 2) ? Color.blue : Color.red
+                            let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
+                            context.fill(Path(rect), with: .color(color))
+                        }
+                    }
+                }
+            }
+            try TestImageGenerator.generate(name: "eroded_checker_b") {
+                Canvas { context, size in
+                    let tileSize = size.width / 16
+                    for row in 0..<16 {
+                        for col in 0..<16 {
+                            let color = (row + col).isMultiple(of: 2) ? Color.blue : Color.red
+                            let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
+                            context.fill(Path(rect), with: .color(color))
+                        }
+                    }
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "eroded_checker_a")
+        let imageB = try loadImage(named: "eroded_checker_b")
+
+        let result = try ImageComparison().compare(imageA, imageB)
+        guard let erodedPSNR = result.erodedPSNR else {
+            Issue.record("erodedPSNR should be populated for CGImage comparisons")
+            return
+        }
+
+        print("eroded_checker - PSNR: \(result.psnr) dB, eroded: \(erodedPSNR) dB")
+
+        // Dense solid regions of error — erosion should not significantly inflate the score.
+        #expect(erodedPSNR < result.psnr + 3.0)
+    }
+
+    @Test
+    func testErodedPSNR_singlePixelDifferenceIsSuppressed() async throws {
+        // Isolated single-pixel differences (surrounded by matching pixels) are exactly
+        // what erosion is designed to discard.
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "eroded_pixel_a") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                }
+            }
+            try TestImageGenerator.generate(name: "eroded_pixel_b") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.blue))
+                    let pixelPath = Path(CGRect(x: size.width / 2, y: size.height / 2, width: 1, height: 1))
+                    context.fill(pixelPath, with: .color(.white))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "eroded_pixel_a")
+        let imageB = try loadImage(named: "eroded_pixel_b")
+
+        let result = try ImageComparison().compare(imageA, imageB)
+        guard let erodedPSNR = result.erodedPSNR else {
+            Issue.record("erodedPSNR should be populated for CGImage comparisons")
+            return
+        }
+
+        print("eroded_single_pixel - PSNR: \(result.psnr) dB, eroded: \(erodedPSNR) dB")
+
+        // The lone pixel contributes a finite drop to PSNR; eroding it wipes the error entirely.
+        #expect(result.psnr < 100.0)
+        #expect(erodedPSNR >= 120.0)
+    }
+
+    @Test
+    func testErodedPSNR_blankVsCircleStaysLow() async throws {
+        // Blank image vs. image with a solid circle: the circle interior is a large
+        // solid region of error. Erosion should strip the 1px AA ring but leave the
+        // interior intact — eroded PSNR should stay close to the baseline PSNR.
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "eroded_blank") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                }
+            }
+            try TestImageGenerator.generate(name: "eroded_circle") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                    let rect = CGRect(origin: .zero, size: size)
+                    let circle = Path(ellipseIn: CGRect(x: rect.midX - 100, y: rect.midY - 100, width: 200, height: 200))
+                    context.fill(circle, with: .color(.red))
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "eroded_blank")
+        let imageB = try loadImage(named: "eroded_circle")
+
+        let result = try ImageComparison().compare(imageA, imageB)
+        guard let erodedPSNR = result.erodedPSNR else {
+            Issue.record("erodedPSNR should be populated for CGImage comparisons")
+            return
+        }
+
+        print("eroded_blank_vs_circle - PSNR: \(result.psnr) dB, eroded: \(erodedPSNR) dB")
+
+        // Circle is a clear visual difference — PSNR should be low and erosion must
+        // not inflate it significantly. The interior area is orders of magnitude larger
+        // than the 1px AA ring, so the two values should be within ~1 dB of each other.
+        #expect(result.psnr < 25.0)
+        #expect(erodedPSNR < result.psnr + 2.0)
+    }
+
+    @Test
+    func testErodedPSNR_thinStrokeSweep() async throws {
+        // Characterize how erosion affects strokes of decreasing width. Thin strokes
+        // are the edge case: at ~1pt the stroke is barely wider than the erosion kernel.
+        for width in [1.0, 2.0, 3.0, 6.0] as [CGFloat] {
+            let nameA = "eroded_sweep_blank_\(Int(width))"
+            let nameB = "eroded_sweep_stroke_\(Int(width))"
+            try await MainActor.run {
+                try TestImageGenerator.generate(name: nameA) {
+                    Canvas { context, size in
+                        context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                    }
+                }
+                try TestImageGenerator.generate(name: nameB) {
+                    Canvas { context, size in
+                        context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                        let rect = CGRect(origin: .zero, size: size)
+                        let circle = Path(ellipseIn: CGRect(x: rect.midX - 100, y: rect.midY - 100, width: 200, height: 200))
+                        context.stroke(circle, with: .color(.red), lineWidth: width)
+                    }
+                }
+            }
+            let imageA = try loadImage(named: nameA)
+            let imageB = try loadImage(named: nameB)
+            let result = try ImageComparison().compare(imageA, imageB)
+            let eroded = result.erodedPSNR ?? .nan
+            print("eroded_sweep stroke=\(width)pt - PSNR: \(result.psnr) dB, eroded: \(eroded) dB (delta: \(eroded - result.psnr))")
+        }
+    }
+
+    @Test
+    func testErodedPSNR_blankVsStrokedCircleStaysLow() async throws {
+        // Blank vs. a stroked circle (thin ring) — the error is a curved band only a few
+        // pixels wide. Erosion may nibble the edges but the ring's core should survive.
+        try await MainActor.run {
+            try TestImageGenerator.generate(name: "eroded_blank_stroke") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                }
+            }
+            try TestImageGenerator.generate(name: "eroded_stroked_circle") {
+                Canvas { context, size in
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                    let rect = CGRect(origin: .zero, size: size)
+                    let circle = Path(ellipseIn: CGRect(x: rect.midX - 100, y: rect.midY - 100, width: 200, height: 200))
+                    context.stroke(circle, with: .color(.red), lineWidth: 6)
+                }
+            }
+        }
+
+        let imageA = try loadImage(named: "eroded_blank_stroke")
+        let imageB = try loadImage(named: "eroded_stroked_circle")
+
+        let result = try ImageComparison().compare(imageA, imageB)
+        guard let erodedPSNR = result.erodedPSNR else {
+            Issue.record("erodedPSNR should be populated for CGImage comparisons")
+            return
+        }
+
+        print("eroded_blank_vs_stroked_circle - PSNR: \(result.psnr) dB, eroded: \(erodedPSNR) dB")
+
+        // A 6pt stroke is clearly visible; the ring's interior pixels have ring-neighbors,
+        // so most of the error survives erosion. Expect only a small inflation.
+        #expect(result.psnr < 40.0)
+        #expect(erodedPSNR < result.psnr + 4.0)
+    }
+
+    @Test
+    func testErodedPSNR_ignoresAAHalos() throws {
+        // Two rasterizations of the same artwork that differ only by ~1px AA along edges.
+        // Standard PSNR is pulled down by the edge noise; eroded PSNR should be much higher.
+        let imageA = try loadResourceImage(named: "edge_aa_a")
+        let imageB = try loadResourceImage(named: "edge_aa_b")
+
+        let result = try ImageComparison().compare(imageA, imageB)
+        guard let erodedPSNR = result.erodedPSNR else {
+            Issue.record("erodedPSNR should be populated for CGImage comparisons")
+            return
+        }
+
+        print("edge_aa - PSNR: \(result.psnr) dB, eroded: \(erodedPSNR) dB")
+
+        // Sanity: the baseline PSNR is in the low 30s-40s range due to AA edge noise.
+        #expect(result.psnr < 60.0)
+        // Edge-aware PSNR should be noticeably higher — at least 10 dB improvement.
+        #expect(erodedPSNR >= result.psnr + 10.0)
+    }
+
     @Test
     func testAlphaBlendVsReference() throws {
         let imageA = try loadResourceImage(named: "alpha_blend")

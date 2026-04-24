@@ -29,10 +29,12 @@ created: 2026-03-06T00:00:00Z
 ## 3: Edge-aware PSNR that ignores 1px AA halos
 
 +++
-status: new
+status: closed
 priority: medium
 kind: feature
 created: 2026-04-24T19:42:18Z
+updated: 2026-04-24T20:03:44Z
+closed: 2026-04-24T20:03:44Z
 +++
 
 Add a PSNR variant that excludes thin single-pixel differences (such as anti-aliasing halos along shape edges) from the error sum, so genuine interior mismatches aren't drowned out by unavoidable rasterizer edge differences.

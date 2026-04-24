@@ -121,6 +121,134 @@ internal struct CPUCompare: Sendable {
         return outputImage
     }
 
+    /// Detailed PSNR result from a CPU comparison.
+    struct DetailedResult {
+        /// Standard PSNR, in dB (capped at 120).
+        var psnr: Double
+        /// Edge-aware PSNR, in dB (capped at 120). See `ImageComparison.Result.erodedPSNR`.
+        var erodedPSNR: Double
+    }
+
+    /// Compare two CGImages on the CPU and return both standard and edge-aware PSNR.
+    ///
+    /// The edge-aware variant applies a 3×3 morphological erosion (minimum filter) to the
+    /// per-pixel squared-error map before averaging — any pixel with a zero-error neighbor is
+    /// treated as zero. This suppresses single-pixel anti-aliasing halos along shape edges
+    /// while preserving solid regions of error.
+    func compareDetailed(_ lhs: CGImage, _ rhs: CGImage) throws -> DetailedResult {
+        guard lhs.width == rhs.width, lhs.height == rhs.height else {
+            throw TextureComparisonError.dimensionMismatch
+        }
+
+        guard let lhsColorSpace = lhs.colorSpace,
+            let rhsColorSpace = rhs.colorSpace else {
+            throw TextureComparisonError.failedToCreateTexture
+        }
+
+        guard lhsColorSpace == rhsColorSpace else {
+            throw TextureComparisonError.colorSpaceMismatch(lhs: lhsColorSpace, rhs: rhsColorSpace)
+        }
+
+        let width = lhs.width
+        let height = lhs.height
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        let totalBytes = width * height * bytesPerPixel
+
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.linearSRGB) else {
+            throw TextureComparisonError.failedToCreateTexture
+        }
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+
+        var pixelsA = [UInt8](repeating: 0, count: totalBytes)
+        var pixelsB = [UInt8](repeating: 0, count: totalBytes)
+
+        guard let contextA = CGContext(
+            data: &pixelsA,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            throw TextureComparisonError.failedToCreateTexture
+        }
+
+        guard let contextB = CGContext(
+            data: &pixelsB,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            throw TextureComparisonError.failedToCreateTexture
+        }
+
+        contextA.draw(lhs, in: CGRect(x: 0, y: 0, width: width, height: height))
+        contextB.draw(rhs, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let pixelCount = width * height
+
+        // Per-pixel sum of squared channel differences (RGBA).
+        var errorMap = [Double](repeating: 0, count: pixelCount)
+        var sumSquaredDiff: Double = 0.0
+
+        for i in 0..<pixelCount {
+            let pixelIndex = i * bytesPerPixel
+
+            let diffR = Double(pixelsA[pixelIndex]) - Double(pixelsB[pixelIndex])
+            let diffG = Double(pixelsA[pixelIndex + 1]) - Double(pixelsB[pixelIndex + 1])
+            let diffB = Double(pixelsA[pixelIndex + 2]) - Double(pixelsB[pixelIndex + 2])
+            let diffA = Double(pixelsA[pixelIndex + 3]) - Double(pixelsB[pixelIndex + 3])
+
+            let sq = diffR * diffR + diffG * diffG + diffB * diffB + diffA * diffA
+            errorMap[i] = sq
+            sumSquaredDiff += sq
+        }
+
+        // 3×3 morphological erosion: zero out any pixel that has a zero-error neighbor.
+        // Image-border pixels are treated as having an implicit zero-error neighbor outside
+        // the image (conservative: errors at the edge are ignored).
+        var erodedSum: Double = 0.0
+        for y in 0..<height {
+            for x in 0..<width {
+                let idx = y * width + x
+                let value = errorMap[idx]
+                if value == 0 {
+                    continue
+                }
+                // Border pixels: at least one neighbor is outside → treat as zero.
+                if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                    continue
+                }
+                var anyZero = false
+                neighborLoop: for dy in -1...1 {
+                    for dx in -1...1 where dx != 0 || dy != 0 {
+                        if errorMap[(y + dy) * width + (x + dx)] == 0 {
+                            anyZero = true
+                            break neighborLoop
+                        }
+                    }
+                }
+                if !anyZero {
+                    erodedSum += value
+                }
+            }
+        }
+
+        let divisor = Double(pixelCount * 4)
+        let mse = sumSquaredDiff / divisor
+        let erodedMSE = erodedSum / divisor
+
+        let psnr: Double = mse == 0 ? 120.0 : min(20.0 * log10(255.0 / sqrt(mse)), 120.0)
+        let erodedPSNR: Double = erodedMSE == 0 ? 120.0 : min(20.0 * log10(255.0 / sqrt(erodedMSE)), 120.0)
+
+        return DetailedResult(psnr: psnr, erodedPSNR: erodedPSNR)
+    }
+
     /// Compare two CGImages using CPU and return PSNR
     /// - Parameters:
     ///   - lhs: First image to compare

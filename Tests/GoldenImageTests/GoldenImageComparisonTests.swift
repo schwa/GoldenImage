@@ -79,6 +79,32 @@ internal struct GoldenImageComparisonTests {
     }
 
     @Test
+    func testGoldenImageComparison_edgeAAHalos_failsWithoutOption() throws {
+        // edge_aa_a vs edge_aa_b differ only by ~1px AA halos. Standard PSNR is ~38 dB,
+        // far below the default 120 dB threshold.
+        let comparison = GoldenImageComparison(
+            imageDirectory: resourcesURL,
+            options: .none
+        )
+        let imageA = try loadResourceImage(named: "edge_aa_a")
+        let result = try comparison.image(image: imageA, matchesGoldenImageNamed: "edge_aa_b")
+        #expect(result == false)
+    }
+
+    @Test
+    func testGoldenImageComparison_edgeAAHalos_passesWithOption() throws {
+        // Same images, but with .ignoreEdgeAAHalos: the eroded PSNR is 120 dB so the
+        // comparison should pass.
+        let comparison = GoldenImageComparison(
+            imageDirectory: resourcesURL,
+            options: .ignoreEdgeAAHalos
+        )
+        let imageA = try loadResourceImage(named: "edge_aa_a")
+        let result = try comparison.image(image: imageA, matchesGoldenImageNamed: "edge_aa_b")
+        #expect(result == true)
+    }
+
+    @Test
     func testGoldenImageComparisonMissing() throws {
         let comparison = GoldenImageComparison(
             imageDirectory: resourcesURL,

@@ -21,6 +21,13 @@ public struct GoldenImageComparison {
 
         // If set copy any images we use to temp
         public static let copyToTemp = Self(rawValue: 3 << 0)
+
+        /// If set, the match also passes when the edge-aware (eroded) PSNR meets
+        /// `psnrThreshold`, even if standard PSNR does not. Useful when the
+        /// rasterizer being tested is known to produce ±1px anti-aliasing
+        /// differences along shape edges. See `ImageComparison.Result.erodedPSNR`
+        /// for caveats around 1px-wide features.
+        public static let ignoreEdgeAAHalos = Self(rawValue: 1 << 2)
     }
 
     public var imageDirectory: URL
@@ -117,8 +124,15 @@ public struct GoldenImageComparison {
 
         let result = try ImageComparison().compare(comparisonImage, normalizedGolden)
 
-        // Return true if PSNR meets threshold
-        return result.psnr >= psnrThreshold
+        // Return true if PSNR meets threshold, or (optionally) if the edge-aware
+        // eroded PSNR meets the threshold.
+        if result.psnr >= psnrThreshold {
+            return true
+        }
+        if options.contains(.ignoreEdgeAAHalos), (result.erodedPSNR ?? 0) >= psnrThreshold {
+            return true
+        }
+        return false
     }
 }
 
