@@ -8,19 +8,15 @@ import SwiftUI
 /// Blocks until the window is closed.
 @MainActor
 internal enum PreviewWindow {
-    static func show(imageA: CGImage, imageB: CGImage, result: ImageComparison.Result, titleA: String, titleB: String, erosionRadius: Int = 1) throws {
-        let comparison = ImageComparison(erosionRadius: erosionRadius)
-        let diff = try comparison.differenceImage(imageA, imageB)
-        let erodedDiff = try comparison.erodedDifferenceImage(imageA, imageB)
-
+    static func show(imageA: CGImage, imageB: CGImage, result: ImageComparison.Result, titleA: String, titleB: String, erosionRadius: Int = 1, gain: Double = 1.0) throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
 
         let view = PreviewView(
             imageA: imageA,
             imageB: imageB,
-            diff: diff,
-            erodedDiff: erodedDiff,
+            erosionRadius: erosionRadius,
+            initialGain: gain,
             result: result,
             titleA: titleA,
             titleB: titleB
@@ -54,23 +50,43 @@ internal enum PreviewWindow {
 private struct PreviewView: View {
     let imageA: CGImage
     let imageB: CGImage
-    let diff: CGImage
-    let erodedDiff: CGImage
+    let erosionRadius: Int
     let result: ImageComparison.Result
     let titleA: String
     let titleB: String
 
     @State private var showEroded = false
+    @State private var gain: Double
+
+    init(imageA: CGImage, imageB: CGImage, erosionRadius: Int, initialGain: Double, result: ImageComparison.Result, titleA: String, titleB: String) {
+        self.imageA = imageA
+        self.imageB = imageB
+        self.erosionRadius = erosionRadius
+        self.result = result
+        self.titleA = titleA
+        self.titleB = titleB
+        self._gain = State(initialValue: initialGain)
+    }
+
+    private var diffImage: CGImage? {
+        let comparison = ImageComparison(erosionRadius: erosionRadius)
+        if showEroded {
+            return try? comparison.erodedDifferenceImage(imageA, imageB, gain: gain)
+        }
+        return try? comparison.differenceImage(imageA, imageB, gain: gain)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 ImagePane(cgImage: imageA, title: titleA)
                 ImagePane(cgImage: imageB, title: titleB)
-                ImagePane(
-                    cgImage: showEroded ? erodedDiff : diff,
-                    title: showEroded ? "Difference (eroded)" : "Difference"
-                )
+                if let diff = diffImage {
+                    ImagePane(
+                        cgImage: diff,
+                        title: showEroded ? "Difference (eroded)" : "Difference"
+                    )
+                }
             }
             .padding(8)
 
@@ -82,6 +98,12 @@ private struct PreviewView: View {
                     PSNRLabel(prefix: "Eroded PSNR", value: eroded)
                 }
                 Spacer()
+                HStack(spacing: 6) {
+                    Text(String(format: "Gain %.1f\u{00d7}", gain))
+                        .frame(width: 80, alignment: .leading)
+                    Slider(value: $gain, in: 1.0...256.0)
+                        .frame(width: 160)
+                }
                 Toggle("Eroded diff", isOn: $showEroded)
                     .toggleStyle(.switch)
                     .controlSize(.small)

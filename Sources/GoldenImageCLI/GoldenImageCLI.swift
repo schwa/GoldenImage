@@ -36,6 +36,9 @@ internal struct GoldenImageCLI: ParsableCommand {
     @Flag(name: [.long, .customShort("p")], help: "Open a window showing image A, image B, and the difference image. macOS only.")
     var preview: Bool = false
 
+    @Option(name: .long, help: "Initial gain (multiplier) applied to the preview difference image to exaggerate subtle diffs. 1.0 = unmodified. Adjustable via the slider in the preview window.")
+    var diffGain: Double = 1.0
+
     func run() throws {
         guard let cgImage1 = loadImage(at: image1) else {
             throw ValidationError("Failed to load image at: \(image1)")
@@ -94,7 +97,8 @@ internal struct GoldenImageCLI: ParsableCommand {
                     result: result,
                     titleA: URL(fileURLWithPath: image1).lastPathComponent,
                     titleB: URL(fileURLWithPath: image2).lastPathComponent,
-                    erosionRadius: erosionRadius
+                    erosionRadius: erosionRadius,
+                    gain: diffGain
                 )
             }
             #else

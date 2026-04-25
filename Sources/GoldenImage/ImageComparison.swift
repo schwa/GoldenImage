@@ -92,10 +92,13 @@ public extension ImageComparison {
     /// - Parameters:
     ///   - lhs: First image to compare
     ///   - rhs: Second image to compare
+    ///   - gain: Multiplier applied to the normalized per-pixel difference before clamping
+    ///     to `[0, 1]`. Use values >1 to exaggerate very subtle differences (e.g. `gain: 32`
+    ///     makes a 1/255 channel diff fully visible). Defaults to 1.0 (no amplification).
     /// - Returns: A grayscale CGImage showing per-pixel differences
-    func differenceImage(_ lhs: CGImage, _ rhs: CGImage) throws -> CGImage {
+    func differenceImage(_ lhs: CGImage, _ rhs: CGImage, gain: Double = 1.0) throws -> CGImage {
         let cpuCompare = CPUCompare(erosionRadius: erosionRadius)
-        return try cpuCompare.differenceImage(lhs, rhs)
+        return try cpuCompare.differenceImage(lhs, rhs, gain: gain)
     }
 
     /// Create a grayscale difference image between two images with a morphological
@@ -107,9 +110,9 @@ public extension ImageComparison {
     ///   - rhs: Second image to compare.
     ///   - erosionRadius: Per-call override for the erosion kernel radius. When
     ///     `nil` (default), uses `self.erosionRadius`.
-    func erodedDifferenceImage(_ lhs: CGImage, _ rhs: CGImage, erosionRadius: Int? = nil) throws -> CGImage {
+    func erodedDifferenceImage(_ lhs: CGImage, _ rhs: CGImage, erosionRadius: Int? = nil, gain: Double = 1.0) throws -> CGImage {
         let cpuCompare = CPUCompare(erosionRadius: erosionRadius ?? self.erosionRadius)
-        return try cpuCompare.differenceImage(lhs, rhs, eroded: true)
+        return try cpuCompare.differenceImage(lhs, rhs, eroded: true, gain: gain)
     }
 }
 
@@ -145,8 +148,8 @@ public extension ImageComparison {
     }
 
     /// Create a grayscale difference image between two images at the given URLs.
-    func differenceImage(_ lhs: URL, _ rhs: URL) throws -> CGImage {
-        try differenceImage(loadImage(at: lhs), loadImage(at: rhs))
+    func differenceImage(_ lhs: URL, _ rhs: URL, gain: Double = 1.0) throws -> CGImage {
+        try differenceImage(loadImage(at: lhs), loadImage(at: rhs), gain: gain)
     }
 }
 
@@ -166,7 +169,7 @@ public extension ImageComparison {
     }
 
     /// Create a grayscale difference image between two CIImages.
-    func differenceImage(_ lhs: CIImage, _ rhs: CIImage) throws -> CGImage {
+    func differenceImage(_ lhs: CIImage, _ rhs: CIImage, gain: Double = 1.0) throws -> CGImage {
         let context = CIContext()
 
         guard let lhsImage = context.createCGImage(lhs, from: lhs.extent) else {
@@ -177,7 +180,7 @@ public extension ImageComparison {
             throw TextureComparisonError.failedToCreateTexture
         }
 
-        return try differenceImage(lhsImage, rhsImage)
+        return try differenceImage(lhsImage, rhsImage, gain: gain)
     }
 }
 

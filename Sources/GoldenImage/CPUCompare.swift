@@ -14,9 +14,13 @@ internal struct CPUCompare: Sendable {
     ///   - eroded: If true, apply a `(2r+1)×(2r+1)` morphological erosion to the difference
     ///     map (where `r` is `erosionRadius`) so thin differences (such as AA halos along
     ///     edges) are suppressed.
+    ///   - gain: Multiplier applied to the normalized per-pixel difference before clamping
+    ///     to `[0, 1]`. Use values >1 to exaggerate very subtle differences (e.g. `gain: 32`
+    ///     makes a 1/255 channel diff fully visible). Defaults to 1.0 (no amplification).
     /// - Returns: A grayscale CGImage showing per-pixel differences
     /// - Throws: TextureComparisonError if images have mismatched dimensions or color spaces
-    func differenceImage(_ lhs: CGImage, _ rhs: CGImage, eroded: Bool = false) throws -> CGImage {
+    func differenceImage(_ lhs: CGImage, _ rhs: CGImage, eroded: Bool = false, gain: Double = 1.0) throws -> CGImage {
+        precondition(gain > 0, "gain must be > 0")
         guard lhs.width == rhs.width, lhs.height == rhs.height else {
             throw TextureComparisonError.dimensionMismatch
         }
@@ -97,7 +101,7 @@ internal struct CPUCompare: Sendable {
 
             // Euclidean distance normalized to 0-1
             let distance = sqrt(diffR * diffR + diffG * diffG + diffB * diffB + diffA * diffA)
-            let normalizedDiff = distance / maxDistance
+            let normalizedDiff = min(distance / maxDistance * gain, 1.0)
 
             grayscalePixels[i] = UInt8(normalizedDiff * 255.0)
         }
