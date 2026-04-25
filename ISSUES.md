@@ -120,3 +120,29 @@ Gaps to close:
 Current test coverage asserts CPU == GPU within 1 dB for standard PSNR on SDR images, which is the only overlap. Closing any of these would let us extend that oracle check further.
 
 ---
+
+## 6: compare and differenceImage silently return wrong results when input color spaces don't match
+
++++
+status: closed
+priority: medium
+kind: bug
+created: 2026-04-25T21:38:34Z
+updated: 2026-04-25T21:49:31Z
+closed: 2026-04-25T21:49:31Z
++++
+
+Both `ImageComparison.compare(_:_:)` and `differenceImage(_:_:)` walk pixel bytes assuming the two CGImages share a color space, but neither validates this. Feeding mismatched images (e.g. linear-sRGB vs sRGB) returns plausible-looking garbage:
+
+- PSNR comes back low/wrong (bytes interpreted in the wrong gamma)
+- Diff image can come back black/empty even when the images visibly differ
+
+Repro: render one image into a CGContext with `CGColorSpace.linearSRGB` (16bpc), another into a normal sRGB texture, pass both to `compare` / `differenceImage`. PSNR will be low, diff will be near-black.
+
+Suggested fix (one of):
+1. `precondition(lhs.colorSpace == rhs.colorSpace)` (or at least same name/model).
+2. Auto-convert one to match the other (probably via CGContext re-draw into a canonical sRGB-8 context internally) before computing.
+
+Today users have to remember to manually re-encode both images into the same color space before calling these APIs, and forgetting silently produces wrong numbers.
+
+---
