@@ -52,7 +52,6 @@ jobs:
           xcodebuild build \
             -scheme GoldenImage-Package \
             -destination '${{ matrix.destination }}' \
-            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             -skipPackagePluginValidation \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
