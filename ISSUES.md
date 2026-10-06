@@ -146,3 +146,21 @@ Suggested fix (one of):
 Today users have to remember to manually re-encode both images into the same color space before calling these APIs, and forgetting silently produces wrong numbers.
 
 ---
+
+## 7: Build warns 'missing creator for mutated node' for the resource bundle
+
++++
+status: new
+priority: low
+kind: bug
+labels: effort:s
+created: 2026-10-06T18:29:09Z
++++
+
+Building a package that depends on GoldenImage (seen in MetalSprocketsGLTF with xcb test, Xcode 27.0 build system, macOS) prints:
+
+warning: missing creator for mutated node: ('<package>/.build/out/Products/Debug/GoldenImage_GoldenImage.bundle/Contents/MacOS')
+
+It is the only build warning left in MetalSprocketsGLTF. The bundle comes from the GoldenImage target's resources (.process("TextureComparison.metal")). Cause not verified: my guess is the processed Metal shader (a metallib in the resource bundle) makes the build system create Contents/MacOS in a resources-only bundle without a task that declares it. Possible fixes to try: compile the shader from source at runtime (makeLibrary(source:)) or with a different resource rule, and check whether the warning goes away.
+
+---
