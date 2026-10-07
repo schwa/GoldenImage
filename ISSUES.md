@@ -166,3 +166,23 @@ warning: missing creator for mutated node: ('<package>/.build/out/Products/Debug
 It is the only build warning left in MetalSprocketsGLTF. The bundle comes from the GoldenImage target's resources (.process("TextureComparison.metal")). Cause not verified: my guess is the processed Metal shader (a metallib in the resource bundle) makes the build system create Contents/MacOS in a resources-only bundle without a task that declares it. Possible fixes to try: compile the shader from source at runtime (makeLibrary(source:)) or with a different resource rule, and check whether the warning goes away.
 
 ---
+
+## 8: Metal shader is compiled from source at runtime instead of shipping a precompiled metallib
+
++++
+status: new
+priority: low
+kind: task
+created: 2026-10-07T17:24:58Z
++++
+
+The fix for #7 switched TextureComparison.metal from .process to .copy in Package.swift. As a result the bundle ships the raw .metal source and the shader is compiled at runtime via makeLibrary(source:) on first use.
+
+Downsides of runtime source compilation:
+- Compilation cost on first use instead of build time.
+- Shader errors surface at runtime rather than build time.
+- Ships source instead of a compiled metallib.
+
+Want to compile the shader at build time (ship a metallib) while still avoiding the 'missing creator for mutated node' warning from #7.
+
+---
