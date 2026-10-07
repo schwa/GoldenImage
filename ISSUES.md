@@ -150,11 +150,13 @@ Today users have to remember to manually re-encode both images into the same col
 ## 7: Build warns 'missing creator for mutated node' for the resource bundle
 
 +++
-status: new
+status: closed
 priority: low
 kind: bug
 labels: effort:s
 created: 2026-10-06T18:29:09Z
+updated: 2026-10-07T17:24:42Z
+closed: 2026-10-07T17:24:42Z
 +++
 
 Building a package that depends on GoldenImage (seen in MetalSprocketsGLTF with xcb test, Xcode 27.0 build system, macOS) prints:

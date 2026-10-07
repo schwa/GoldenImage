@@ -25,7 +25,7 @@ let package = Package(
         .target(
             name: "GoldenImage",
             resources: [
-                .process("TextureComparison.metal")
+                .copy("TextureComparison.metal")
             ]
         ),
         .executableTarget(
