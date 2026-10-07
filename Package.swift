@@ -24,9 +24,16 @@ let package = Package(
     targets: [
         .target(
             name: "GoldenImage",
-            resources: [
-                .copy("TextureComparison.metal")
+            exclude: [
+                "TextureComparison.metal"
+            ],
+            plugins: [
+                "MetalCompilerPlugin"
             ]
+        ),
+        .plugin(
+            name: "MetalCompilerPlugin",
+            capability: .buildTool()
         ),
         .executableTarget(
             name: "GoldenImageCLI",

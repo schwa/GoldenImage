@@ -170,10 +170,12 @@ It is the only build warning left in MetalSprocketsGLTF. The bundle comes from t
 ## 8: Metal shader is compiled from source at runtime instead of shipping a precompiled metallib
 
 +++
-status: new
+status: closed
 priority: low
 kind: task
 created: 2026-10-07T17:24:58Z
+updated: 2026-10-07T17:32:34Z
+closed: 2026-10-07T17:32:34Z
 +++
 
 The fix for #7 switched TextureComparison.metal from .process to .copy in Package.swift. As a result the bundle ships the raw .metal source and the shader is compiled at runtime via makeLibrary(source:) on first use.

@@ -35,14 +35,10 @@ internal final class TextureCompare: Sendable {
         self.commandQueue = commandQueue
 
         let library: MTLLibrary
-        if let defaultLibrary = device.makeDefaultLibrary() {
-            library = defaultLibrary
-        } else if let bundleLibrary = try? device.makeDefaultLibrary(bundle: Bundle.module) {
+        if let bundleLibrary = try? device.makeDefaultLibrary(bundle: Bundle.module) {
             library = bundleLibrary
-        } else if let shaderURL = Bundle.module.url(forResource: "TextureComparison", withExtension: "metal"),
-            let shaderSource = try? String(contentsOf: shaderURL, encoding: .utf8),
-            let sourceLibrary = try? device.makeLibrary(source: shaderSource, options: nil) {
-            library = sourceLibrary
+        } else if let defaultLibrary = device.makeDefaultLibrary() {
+            library = defaultLibrary
         } else {
             fatalError("Failed to load Metal shader library")
         }
