@@ -188,3 +188,21 @@ Downsides of runtime source compilation:
 Want to compile the shader at build time (ship a metallib) while still avoiding the 'missing creator for mutated node' warning from #7.
 
 ---
+
+## 9: Mismatched images are not saved to failureOutputDirectory
+
++++
+status: new
+priority: medium
+kind: bug
+created: 2026-10-15T21:57:51Z
++++
+
+GoldenImageComparison.image(image:matchesGoldenImageNamed:) only writes the rendered image when no golden exists. When a golden exists but PSNR is below the threshold, it returns false and writes nothing, even when failureOutputDirectory is set. There is also no PSNR value in the result.
+
+Seen in MetalSprocketsSceneGraph: the shadows-spot and shadows-point golden tests failed with 'Failure images are in <failureOutputDirectory>', but the directory had no new files. The only way to see the render was to delete the golden and rerun.
+
+Expected: on a mismatch, the rendered image (and ideally a diff) is saved to failureOutputDirectory, and the measured PSNR is available to the caller.
+Actual: false is returned and nothing is written.
+
+---
