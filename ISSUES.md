@@ -208,3 +208,16 @@ Expected: on a mismatch, the rendered image (and ideally a diff) is saved to fai
 Actual: false is returned and nothing is written.
 
 ---
+
+## 10: Replace local MetalCompilerPlugin with external schwa/MetalCompilerPlugin package
+
++++
+status: new
+priority: medium
+kind: task
+created: 2026-10-15T22:09:04Z
++++
+
+Plugins/MetalCompilerPlugin is a local copy of functionality already provided by https://github.com/schwa/MetalCompilerPlugin (used by Splats). Add the package dependency, use .plugin(name: "MetalCompilerPlugin", package: "MetalCompilerPlugin") on the GoldenImage target, delete Plugins/MetalCompilerPlugin, and verify the metallib still loads via makeDefaultLibrary(bundle:). Run tests.
+
+---
