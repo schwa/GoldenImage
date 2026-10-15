@@ -212,10 +212,12 @@ Actual: false is returned and nothing is written.
 ## 10: Replace local MetalCompilerPlugin with external schwa/MetalCompilerPlugin package
 
 +++
-status: new
+status: closed
 priority: medium
 kind: task
 created: 2026-10-15T22:09:04Z
+updated: 2026-10-15T22:09:52Z
+closed: 2026-10-15T22:09:52Z
 +++
 
 Plugins/MetalCompilerPlugin is a local copy of functionality already provided by https://github.com/schwa/MetalCompilerPlugin (used by Splats). Add the package dependency, use .plugin(name: "MetalCompilerPlugin", package: "MetalCompilerPlugin") on the GoldenImage target, delete Plugins/MetalCompilerPlugin, and verify the metallib still loads via makeDefaultLibrary(bundle:). Run tests.

@@ -20,6 +20,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
+        .package(url: "https://github.com/schwa/MetalCompilerPlugin", from: "0.4.1"),
     ],
     targets: [
         .target(
@@ -27,13 +28,12 @@ let package = Package(
             exclude: [
                 "TextureComparison.metal"
             ],
+            swiftSettings: [
+                .define("METAL_COMPILER_PLUGIN_DEBUG", .when(configuration: .debug))
+            ],
             plugins: [
-                "MetalCompilerPlugin"
+                .plugin(name: "MetalCompilerPlugin", package: "MetalCompilerPlugin")
             ]
-        ),
-        .plugin(
-            name: "MetalCompilerPlugin",
-            capability: .buildTool()
         ),
         .executableTarget(
             name: "GoldenImageCLI",
