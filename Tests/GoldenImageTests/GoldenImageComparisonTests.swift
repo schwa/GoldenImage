@@ -92,6 +92,23 @@ internal struct GoldenImageComparisonTests {
     }
 
     @Test
+    func testGoldenImageComparisonMismatch_savesImagesAndPSNR() throws {
+        let failureDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GoldenImageTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: failureDir) }
+        let comparison = GoldenImageComparison(imageDirectory: resourcesURL, failureOutputDirectory: failureDir)
+        let imageA = try loadResourceImage(named: "edge_aa_a")
+        let outcome = try comparison.compare(image: imageA, toGoldenImageNamed: "edge_aa_b")
+        #expect(outcome.isMatch == false)
+        #expect(outcome.psnr < 120)
+        let saved = try #require(outcome.savedImageURL)
+        let diff = try #require(outcome.differenceImageURL)
+        #expect(saved.lastPathComponent == "edge_aa_b.png")
+        #expect(FileManager.default.fileExists(atPath: saved.path))
+        #expect(FileManager.default.fileExists(atPath: diff.path))
+    }
+
+    @Test
     func testGoldenImageComparison_edgeAAHalos_passesWithOption() throws {
         // Same images, but with .ignoreEdgeAAHalos: the eroded PSNR is 120 dB so the
         // comparison should pass.

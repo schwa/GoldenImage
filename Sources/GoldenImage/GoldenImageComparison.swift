@@ -52,7 +52,25 @@ public struct GoldenImageComparison {
         self.failureOutputDirectory = failureOutputDirectory
     }
 
+    public struct Outcome: Sendable {
+        public var psnr: Double
+        public var erodedPSNR: Double?
+        public var isMatch: Bool
+        /// Set on mismatch: where the rendered image was written.
+        public var savedImageURL: URL?
+        /// Set on mismatch: where the difference image was written.
+        public var differenceImageURL: URL?
+    }
+
+    private var outputDirectory: URL {
+        failureOutputDirectory ?? FileManager.default.temporaryDirectory.appendingPathComponent("GoldenImages")
+    }
+
     public func image(image: CGImage, matchesGoldenImageNamed name: String) throws -> Bool {
+        try compare(image: image, toGoldenImageNamed: name).isMatch
+    }
+
+    public func compare(image: CGImage, toGoldenImageNamed name: String) throws -> Outcome {
         // Find golden image in the directory
         let goldenImageURL = FileManager.default.url(ofDirectory: imageDirectory, named: name, conformingTo: .image)
 
@@ -62,9 +80,7 @@ public struct GoldenImageComparison {
 
         // If no golden image exists, always save the input image for manual copying
         guard let goldenImageURL else {
-            let outputDir = failureOutputDirectory
-                ?? FileManager.default.temporaryDirectory.appendingPathComponent("GoldenImages")
-            let tempURL = outputDir.appendingPathComponent("\(name).png")
+            let tempURL = outputDirectory.appendingPathComponent("\(name).png")
 
             // Create directory if needed
             try FileManager.default.createDirectory(at: tempURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -124,15 +140,19 @@ public struct GoldenImageComparison {
 
         let result = try ImageComparison().compare(comparisonImage, normalizedGolden)
 
-        // Return true if PSNR meets threshold, or (optionally) if the edge-aware
-        // eroded PSNR meets the threshold.
-        if result.psnr >= psnrThreshold {
-            return true
+        let isMatch = result.psnr >= psnrThreshold
+            || (options.contains(.ignoreEdgeAAHalos) && (result.erodedPSNR ?? 0) >= psnrThreshold)
+        var outcome = Outcome(psnr: result.psnr, erodedPSNR: result.erodedPSNR, isMatch: isMatch)
+        if !isMatch {
+            try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+            let savedURL = outputDirectory.appendingPathComponent("\(name).png")
+            try normalizedInput.write(to: savedURL)
+            outcome.savedImageURL = savedURL
+            let diffURL = outputDirectory.appendingPathComponent("\(name)-diff.png")
+            try ImageComparison().differenceImage(comparisonImage, normalizedGolden).write(to: diffURL)
+            outcome.differenceImageURL = diffURL
         }
-        if options.contains(.ignoreEdgeAAHalos), (result.erodedPSNR ?? 0) >= psnrThreshold {
-            return true
-        }
-        return false
+        return outcome
     }
 }
 

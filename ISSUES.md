@@ -192,10 +192,12 @@ Want to compile the shader at build time (ship a metallib) while still avoiding 
 ## 9: Mismatched images are not saved to failureOutputDirectory
 
 +++
-status: new
+status: closed
 priority: medium
 kind: bug
 created: 2026-10-15T21:57:51Z
+updated: 2026-10-15T22:05:40Z
+closed: 2026-10-15T22:05:40Z
 +++
 
 GoldenImageComparison.image(image:matchesGoldenImageNamed:) only writes the rendered image when no golden exists. When a golden exists but PSNR is below the threshold, it returns false and writes nothing, even when failureOutputDirectory is set. There is also no PSNR value in the result.
