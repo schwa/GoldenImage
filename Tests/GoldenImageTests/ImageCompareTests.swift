@@ -828,5 +828,4 @@ internal struct ImageCompareTests {
 internal enum TestError: Error {
     case failedToLoadImage(String)
     case metalNotAvailable
-    case imageMagickFailed(String)
 }
